@@ -308,3 +308,78 @@ test('generated native header contract and binary fixtures agree with validated-
   const rejected=await runtime.dispatchFetch('https://test.invalid/live/header-fixture/bridge',{method:'POST',body:JSON.stringify({...requestBody,resolved:{...payload,attachments:[{...file,contentBase64:Buffer.from('invalid signature').toString('base64')}]}})});
   assert.equal(rejected.status,400);assert.equal((await rejected.json() as {error:{code:string}}).error.code,'ATTACHMENT_REJECTED');
 });
+
+test('repeated meet-ups preserve history, edit by ID, replay once and keep independent photos and expenses',async()=>{
+  const initial=await seed(),groupId=initial.groups[0].id;
+  const before=(await request('a','groups.get',{groupId})).body.data;
+  assert.equal(before.group.meetupCount,1);assert.equal(before.group.meetupReports,0);
+  const originalIds=new Set(before.reports.map(report=>report.id));
+  const firstPhoto=await upload('a',groupId),secondPhoto=await upload('a',groupId);
+  const firstKey=uuid(),secondKey=uuid();
+  const common={groupId,title:'Weekly catch-up',attendance:2,isUseGC:true,isRequiredSC:false};
+  const firstPayload={...common,meetupDate:'2026-09-20',description:'First independent meet-up',attachmentIds:[firstPhoto.id]};
+  const secondPayload={...common,meetupDate:'2026-09-27',description:'Second independent meet-up',attachmentIds:[secondPhoto.id]};
+  const first=await request('a','reports.meetup.save',firstPayload,firstKey),second=await request('a','reports.meetup.save',secondPayload,secondKey);
+  assert.equal(first.status,200,JSON.stringify(first.body));assert.equal(second.status,200,JSON.stringify(second.body));
+  const firstReport=first.body.data.report,secondReport=second.body.data.report;
+  assert.notEqual(firstReport.id,secondReport.id);assert.ok(!originalIds.has(firstReport.id));assert.ok(!originalIds.has(secondReport.id));
+  assert.equal(firstReport.attachments[0].parentId,firstReport.id);assert.equal(secondReport.attachments[0].parentId,secondReport.id);
+  assert.equal(second.body.data.group.meetupCount,3);assert.equal(second.body.data.group.meetupReports,2);
+
+  const edited=await request('a','reports.meetup.save',{...firstPayload,reportId:firstReport.id,expectedVersion:firstReport.version,description:'First meet-up edited by its exact ID'},uuid());
+  assert.equal(edited.status,200);assert.equal(edited.body.data.report.id,firstReport.id);assert.notEqual(edited.body.data.report.version,firstReport.version);
+  const replayed=await request('a','reports.meetup.save',firstPayload,firstKey);assert.equal(replayed.body.replayed,true);assert.equal(replayed.body.data.report.id,firstReport.id);
+  const rereadFirst=(await request('a','reports.get',{kind:'meetup',reportId:firstReport.id})).body.data.report;
+  const rereadSecond=(await request('a','reports.get',{kind:'meetup',reportId:secondReport.id})).body.data.report;
+  assert.equal(rereadFirst.description,'First meet-up edited by its exact ID');assert.deepEqual(rereadSecond,secondReport);
+  assert.equal((await request('a','reports.meetup.save',{...firstPayload,reportId:firstReport.id,expectedVersion:firstReport.version},uuid())).body.error?.code,'VERSION_CONFLICT');
+  assert.equal((await request('a','reports.meetup.save',{...secondPayload,reportId:secondReport.id,expectedVersion:secondReport.version,attachmentIds:[firstPhoto.id]},uuid())).body.error?.code,'OWNERSHIP_DENIED');
+
+  const firstReceipt=await upload('a',groupId,'expense'),secondReceipt=await upload('a',groupId,'expense'),expenseKey=uuid();
+  const firstExpensePayload={groupId,meetupReportId:firstReport.id,amount:21.35,attachmentIds:[firstReceipt.id]};
+  const firstExpense=await request('a','expenses.save',firstExpensePayload,expenseKey);
+  const secondExpense=await request('a','expenses.save',{groupId,meetupReportId:secondReport.id,amount:42.15,attachmentIds:[secondReceipt.id]},uuid());
+  assert.equal(firstExpense.status,200);assert.equal(secondExpense.status,200);
+  assert.notEqual(firstExpense.body.data.expense.id,secondExpense.body.data.expense.id);
+  assert.equal((await request('a','expenses.save',firstExpensePayload,expenseKey)).body.replayed,true);
+  assert.equal((await request('a','expenses.save',{groupId,meetupReportId:secondReport.id,expenseId:firstExpense.body.data.expense.id,expectedVersion:firstExpense.body.data.expense.version,amount:22,attachmentIds:[firstReceipt.id]},uuid())).body.error?.code,'OWNERSHIP_DENIED');
+  assert.equal((await request('a','attachments.download',{parentKind:'meetupReport',parentId:secondReport.id,groupId,attachmentId:firstPhoto.id})).body.error?.code,'OWNERSHIP_DENIED');
+  assert.equal((await request('a','attachments.download',{parentKind:'expense',parentId:secondExpense.body.data.expense.id,groupId,attachmentId:firstReceipt.id})).body.error?.code,'OWNERSHIP_DENIED');
+
+  const after=(await request('a','groups.get',{groupId})).body.data;
+  assert.deepEqual(after.reports.filter(report=>originalIds.has(report.id)),before.reports,'Existing Week 1 and draft Meet-up records survive unchanged.');
+  assert.equal(after.group.meetupCount,3);assert.equal(after.group.meetupReports,2);assert.equal(after.expenses.length,2);
+  assert.equal(after.expenses.find(expense=>expense.meetupReportId===firstReport.id)?.attachments[0].id,firstReceipt.id);
+  assert.equal(after.expenses.find(expense=>expense.meetupReportId===secondReport.id)?.attachments[0].id,secondReceipt.id);
+  assert.equal((await request('a','groups.list')).body.data.items.find(group=>group.id===groupId)?.meetupCount,3);
+  assert.equal((await seed()).groups.find(group=>group.id===groupId)?.meetupCount,3);
+  const historyIds:string[]=[];let cursor:string|undefined;
+  do { const page=(await request('a','reports.list',{groupId,kind:'meetup',limit:1,...(cursor?{cursor}:{})})).body.data;historyIds.push(...page.items.map(report=>report.id));cursor=page.nextCursor??undefined; }while(cursor);
+  assert.deepEqual(new Set(historyIds),new Set([...before.reports.filter(report=>report.kind==='meetup').map(report=>report.id),firstReport.id,secondReport.id]));
+  assert.equal(historyIds.length,3);
+  const fileRows=await database.prepare('SELECT id,parent_id FROM mentor_files WHERE account_id=? AND state=\'attached\'').bind('a').all<{id:string;parent_id:string}>();
+  const parents=new Map(fileRows.results.map(file=>[file.id,file.parent_id]));
+  assert.equal(parents.get(firstPhoto.id),firstReport.id);assert.equal(parents.get(secondPhoto.id),secondReport.id);
+  assert.equal(parents.get(firstReceipt.id),firstExpense.body.data.expense.id);assert.equal(parents.get(secondReceipt.id),secondExpense.body.data.expense.id);
+  const audit=await database.prepare('SELECT count(*) AS n FROM mentor_audit WHERE account_id=? AND operation=\'reports.meetup.save\' AND outcome=\'succeeded\'').bind('a').first<{n:number}>();assert.equal(audit?.n,3,'Two creates and one edit; replays do not create another report.');
+});
+
+test('native multiple-meetup fixtures retain every report and distinguish total history from milestones',async()=>{
+  const directory=new URL('./fixtures/',import.meta.url);
+  const groupFixture=JSON.parse(await readFile(new URL('flow-contract-groups.get.multiple-meetups.json',directory),'utf8')) as {operation:Operation;response:{ok:true;data:{group:{meetupCount?:number;meetupReports:number}}}};
+  const groupResponse=await runtime.dispatchFetch('https://test.invalid/live/multiple-flow-fixture/flow-fixture',{method:'POST',body:JSON.stringify(groupFixture)});
+  const detail=await groupResponse.json() as {data:OperationResults['groups.get']};assert.equal(groupResponse.status,200);
+  const meetups=detail.data.reports.filter(report=>report.kind==='meetup');
+  assert.equal(meetups.length,3);assert.equal(new Set(meetups.map(report=>report.id)).size,3);
+  assert.equal(detail.data.group.meetupCount,3);assert.equal(detail.data.group.meetupReports,2,'Legacy milestone count must not truncate the report collection.');
+  for(const report of meetups){assert.ok(report.attachments.length>0);for(const file of report.attachments)assert.equal(file.parentId,report.id);}
+  assert.equal(detail.data.expenses.length,2);assert.equal(new Set(detail.data.expenses.map(expense=>expense.meetupReportId)).size,2);
+  for(const expense of detail.data.expenses){assert.ok(meetups.some(report=>report.id===expense.meetupReportId));for(const file of expense.attachments)assert.equal(file.parentId,expense.id);}
+  const listFixture=JSON.parse(await readFile(new URL('flow-contract-reports.list.multiple-meetups.json',directory),'utf8')) as {operation:Operation;response:{ok:true;data:unknown}};
+  const listResponse=await runtime.dispatchFetch('https://test.invalid/live/multiple-flow-fixture/flow-fixture',{method:'POST',body:JSON.stringify(listFixture)});
+  const list=await listResponse.json() as {data:OperationResults['reports.list']};assert.equal(listResponse.status,200);assert.deepEqual(new Set(list.data.items.filter(report=>report.kind==='meetup').map(report=>report.id)),new Set(meetups.map(report=>report.id)));
+  const inconsistent=structuredClone(groupFixture);inconsistent.response.data.group.meetupCount=2;
+  const rejected=await runtime.dispatchFetch('https://test.invalid/live/multiple-flow-fixture/flow-fixture',{method:'POST',body:JSON.stringify(inconsistent)});assert.equal(rejected.status,502,'An allegedly complete count that disagrees with history must fail closed.');
+  delete groupFixture.response.data.group.meetupCount;
+  const compatible=await runtime.dispatchFetch('https://test.invalid/live/multiple-flow-fixture/flow-fixture',{method:'POST',body:JSON.stringify(groupFixture)});assert.equal(compatible.status,200);assert.equal((await compatible.json() as {data:OperationResults['groups.get']}).data.group.meetupCount,3,'Older full-detail adapters remain compatible without the optional count.');
+});

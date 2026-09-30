@@ -1,0 +1,98 @@
+{
+  "operation": "reports.list",
+  "response": {
+    "schemaVersion": "1.0",
+    "requestId": "6fa132f4-d6c9-4c7a-9090-dcbf7d50f003",
+    "ok": true,
+    "data": {
+      "items": [
+        {
+          "id": 900201,
+          "version": "\"3\"",
+          "kind": "meetup",
+          "groupId": 900101,
+          "title": "Synthetic meet-up 1",
+          "createdAt": "2026-09-29T05:00:00Z",
+          "modifiedAt": "2026-09-29T05:05:00Z",
+          "reviewStatus": "accepted",
+          "submissionState": "unknown",
+          "attachments": [
+            {
+              "id": "c3ludGhldGljLW1lZXR1cC0xLmhlaWM",
+              "fileName": "synthetic-meetup-1.heic",
+              "mimeType": "image/heic",
+              "sizeBytes": null,
+              "parentKind": "meetupReport",
+              "parentId": 900201
+            }
+          ],
+          "otherGroup": "",
+          "meetupDate": "2026-09-29",
+          "attendance": 2,
+          "description": "Synthetic fixture: campus orientation.",
+          "isUseGC": true,
+          "isRequiredSC": false,
+          "scComment": ""
+        },
+        {
+          "id": 900202,
+          "version": "\"3\"",
+          "kind": "meetup",
+          "groupId": 900101,
+          "title": "Synthetic meet-up 2",
+          "createdAt": "2026-09-29T05:00:00Z",
+          "modifiedAt": "2026-09-29T05:05:00Z",
+          "reviewStatus": "read",
+          "submissionState": "unknown",
+          "attachments": [
+            {
+              "id": "c3ludGhldGljLW1lZXR1cC0yLmhlaWM",
+              "fileName": "synthetic-meetup-2.heic",
+              "mimeType": "image/heic",
+              "sizeBytes": null,
+              "parentKind": "meetupReport",
+              "parentId": 900202
+            }
+          ],
+          "otherGroup": "",
+          "meetupDate": "2026-09-29",
+          "attendance": 2,
+          "description": "Synthetic fixture: campus orientation.",
+          "isUseGC": true,
+          "isRequiredSC": false,
+          "scComment": ""
+        },
+        {
+          "id": 900203,
+          "version": "\"3\"",
+          "kind": "meetup",
+          "groupId": 900101,
+          "title": "Synthetic meet-up 3",
+          "createdAt": "2026-09-29T05:00:00Z",
+          "modifiedAt": "2026-09-29T05:05:00Z",
+          "reviewStatus": "submitted",
+          "submissionState": "unknown",
+          "attachments": [
+            {
+              "id": "c3ludGhldGljLW1lZXR1cC0zLmhlaWM",
+              "fileName": "synthetic-meetup-3.heic",
+              "mimeType": "image/heic",
+              "sizeBytes": null,
+              "parentKind": "meetupReport",
+              "parentId": 900203
+            }
+          ],
+          "otherGroup": "",
+          "meetupDate": "2026-09-29",
+          "attendance": 2,
+          "description": "Synthetic fixture: campus orientation.",
+          "isUseGC": true,
+          "isRequiredSC": false,
+          "scComment": ""
+        }
+      ],
+      "nextCursor": null
+    },
+    "replayed": false
+  }
+}

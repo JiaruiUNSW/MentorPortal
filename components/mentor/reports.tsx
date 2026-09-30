@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useState } from "react";
+import { Plus } from "lucide-react";
 import type { AttachmentDto, ExpenseDto, GroupDto, ReportDto, ReportKind } from "@/lib/contracts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,29 +10,55 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Attachments } from "./attachments";
 import { mentorRequest } from "./api";
 import { CheckField, TextField } from "./form-fields";
-import { reportLabels, type ReportSelection } from "./groups";
+import { reportLabels, reportState, type ReportSelection } from "./groups";
 import { useMutation, usePagedResource, useResource } from "./hooks";
 import { useSession } from "./session";
 import { dateLabel, EmptyState, ErrorNotice, humanize, LoadingState, PageHeader, StatusMark, SuccessNotice } from "./ui";
 
 export function ReportsView({ groups, onReport, revision = 0 }: { groups: GroupDto[]; onReport: (selection: ReportSelection) => void; revision?: number }) {
-  const [groupId, setGroupId] = useState(groups[0]?.id || ""); const [kind, setKind] = useState(""); const [newOpen, setNewOpen] = useState(false);
+  const [groupId, setGroupId] = useState(groups[0]?.id || "");
+  const [kind, setKind] = useState("");
+  const [newOpen, setNewOpen] = useState(false);
+  const group = groups.find(item => item.id === groupId);
   const load = useCallback((cursor?: string) => groupId ? mentorRequest("reports.list", { groupId, ...(kind ? { kind: kind as ReportKind } : {}), ...(cursor ? { cursor } : {}), limit: 25 }) : Promise.resolve({ items: [] as ReportDto[], nextCursor: null }), [groupId, kind]);
   const resource = usePagedResource(load, revision);
-  return <><PageHeader title="Reports" description="Prepare and review your mentoring reports."><Button onClick={() => setNewOpen(true)} disabled={!groups.find(group => group.id === groupId)?.reportEnabled}>Start a report</Button></PageHeader><div className="filter-row"><Field><FieldLabel htmlFor="reports-group">Group</FieldLabel><NativeSelect id="reports-group" disabled={!groups.length} value={groupId} onChange={e => setGroupId(e.target.value)}>{groups.map(group => <NativeSelectOption key={group.id} value={group.id}>{group.title}</NativeSelectOption>)}</NativeSelect></Field><Field><FieldLabel htmlFor="reports-kind">Report type</FieldLabel><NativeSelect id="reports-kind" value={kind} onChange={e => setKind(e.target.value)}><NativeSelectOption value="">All report types</NativeSelectOption>{Object.entries(reportLabels).map(([value, label]) => <NativeSelectOption key={value} value={value}>{label}</NativeSelectOption>)}</NativeSelect></Field></div><ErrorNotice error={resource.error} retry={resource.reload} />
-    {resource.loading ? <LoadingState label="Loading reports…" /> : resource.data?.items.length ? <div className="data-table"><Table><TableHeader><TableRow><TableHead>Report</TableHead><TableHead>Group</TableHead><TableHead>Status</TableHead><TableHead>Last updated</TableHead><TableHead><span className="sr-only">Action</span></TableHead></TableRow></TableHeader><TableBody>{resource.data.items.map(report => <TableRow key={report.id}><TableCell><strong>{reportLabels[report.kind]}</strong>{report.title ? <span className="cell-secondary">{report.title}</span> : null}</TableCell><TableCell>{groups.find(group => group.id === report.groupId)?.title || "Assigned group"}</TableCell><TableCell><StatusMark complete={report.submissionState === "submitted"}>{humanize(report.submissionState)}</StatusMark></TableCell><TableCell>{dateLabel(report.modifiedAt || report.createdAt)}</TableCell><TableCell><Button variant="outline" onClick={() => { const group = groups.find(item => item.id === report.groupId); if (group) onReport({ group, kind: report.kind, report }); }} disabled={!groups.some(group => group.id === report.groupId)}>{report.submissionState === "submitted" || report.submissionState === "unknown" ? "View report" : "Continue report"}</Button></TableCell></TableRow>)}</TableBody></Table></div> : !resource.error ? <EmptyState title={groups.length ? "No reports here yet" : "No groups assigned"}>{groups.length ? "Start a report for this group, or choose another filter." : "Your reports will appear when a mentoring group is assigned to you."}</EmptyState> : null}
-    <ErrorNotice error={resource.pageError} retry={resource.more} />{resource.data?.nextCursor ? <div className="load-more"><Button variant="outline" onClick={resource.more} disabled={resource.loadingMore}>{resource.loadingMore ? "Loading…" : "Load more reports"}</Button></div> : null}
+  const reports = [...(resource.data?.items || [])].sort((a, b) => (b.meetupDate || b.createdAt || "").localeCompare(a.meetupDate || a.createdAt || "") || a.id.localeCompare(b.id));
+  function openReport(report: ReportDto) { const owner = groups.find(item => item.id === report.groupId); if (owner) onReport({ group: owner, kind: report.kind, report }); }
+
+  return <>
+    <PageHeader title="Reports" description="Prepare and review your mentoring reports.">
+      <div className="page-actions"><Button variant="outline" onClick={() => setNewOpen(true)} disabled={!group?.reportEnabled}>Start a report</Button><Button onClick={() => { if (group) onReport({ group, kind: "meetup" }); }} disabled={!group?.reportEnabled}><Plus data-icon="inline-start" />New meet-up</Button></div>
+    </PageHeader>
+    <section className="report-library workspace-panel" aria-label="Report history">
+      <div className="filter-row">
+        <Field><FieldLabel htmlFor="reports-group">Group</FieldLabel><NativeSelect id="reports-group" disabled={!groups.length} value={groupId} onChange={event => setGroupId(event.target.value)}>{groups.map(item => <NativeSelectOption key={item.id} value={item.id}>{item.title}</NativeSelectOption>)}</NativeSelect></Field>
+        <Field><FieldLabel htmlFor="reports-kind">Report type</FieldLabel><NativeSelect id="reports-kind" value={kind} onChange={event => setKind(event.target.value)}><NativeSelectOption value="">All report types</NativeSelectOption>{Object.entries(reportLabels).map(([value, label]) => <NativeSelectOption key={value} value={value}>{label}</NativeSelectOption>)}</NativeSelect></Field>
+      </div>
+      <ErrorNotice error={resource.error} retry={resource.reload} />
+      {resource.loading ? <LoadingState label="Loading reports…" /> : reports.length ? <>
+        <div className="report-library-desktop panel-table"><Table><TableHeader><TableRow><TableHead>Report</TableHead><TableHead>Date</TableHead><TableHead>Status</TableHead><TableHead>Action</TableHead></TableRow></TableHeader><TableBody>{reports.map(report => {
+          const state = reportState(report);
+          return <TableRow key={report.id}><TableCell><strong>{report.kind === "meetup" ? report.title : reportLabels[report.kind]}</strong><span className="cell-secondary">{report.kind === "meetup" ? "Meet-up" : report.title}</span></TableCell><TableCell>{dateLabel(report.kind === "meetup" ? report.meetupDate : report.createdAt || report.modifiedAt)}</TableCell><TableCell><StatusMark complete={state.complete}>{state.label}</StatusMark></TableCell><TableCell><Button variant="outline" onClick={() => openReport(report)} disabled={!groups.some(item => item.id === report.groupId)}>{state.action}</Button></TableCell></TableRow>;
+        })}</TableBody></Table></div>
+        <ul className="report-library-mobile">{reports.map(report => {
+          const state = reportState(report);
+          return <li key={report.id}><div className="session-identity"><strong>{report.kind === "meetup" ? report.title : reportLabels[report.kind]}</strong><span>{reportLabels[report.kind]} · {dateLabel(report.kind === "meetup" ? report.meetupDate : report.createdAt || report.modifiedAt)}</span></div><StatusMark complete={state.complete}>{state.label}</StatusMark><Button variant="outline" onClick={() => openReport(report)} disabled={!groups.some(item => item.id === report.groupId)}>{state.action}</Button></li>;
+        })}</ul>
+      </> : !resource.error ? <EmptyState title={groups.length ? "No reports here yet" : "No groups assigned"}>{groups.length ? "Start a report for this group, or choose another filter." : "Your reports will appear when a mentoring group is assigned to you."}</EmptyState> : null}
+      <ErrorNotice error={resource.pageError} retry={resource.more} />
+      {resource.data?.nextCursor ? <div className="load-more"><Button variant="outline" onClick={resource.more} disabled={resource.loadingMore}>{resource.loadingMore ? "Loading…" : "Load more reports"}</Button></div> : null}
+    </section>
     <Dialog open={newOpen} onOpenChange={setNewOpen}><DialogContent><DialogHeader><DialogTitle>Start a report</DialogTitle><DialogDescription>Choose the group and report you want to prepare.</DialogDescription></DialogHeader>{newOpen ? <NewReportChooser groups={groups} defaultGroupId={groupId} start={selection => { setNewOpen(false); onReport(selection); }} /> : null}</DialogContent></Dialog>
   </>;
 }
 function NewReportChooser({ groups, defaultGroupId, start }: { groups: GroupDto[]; defaultGroupId: string; start: (selection: ReportSelection) => void }) {
   const [groupId, setGroupId] = useState(defaultGroupId || groups[0]?.id || ""); const [kind, setKind] = useState<ReportKind>("week1"); const [error, setError] = useState<Error | null>(null); const [pending, setPending] = useState(false);
-  async function submit(event: React.FormEvent) { event.preventDefault(); setPending(true); setError(null); try { const result = await mentorRequest("groups.get", { groupId }); start({ group: result.group, kind, report: result.reports.find(report => report.kind === kind && report.submissionState !== "submitted") || (kind !== "meetup" ? result.reports.find(report => report.kind === kind) : undefined) }); } catch (e) { setError(e as Error); setPending(false); } }
+  async function submit(event: React.FormEvent) { event.preventDefault(); setPending(true); setError(null); try { const result = await mentorRequest("groups.get", { groupId }); start({ group: result.group, kind, report: kind === "meetup" ? undefined : result.reports.find(report => report.kind === kind && report.submissionState !== "submitted") || result.reports.find(report => report.kind === kind) }); } catch (e) { setError(e as Error); setPending(false); } }
   return <form onSubmit={submit}><FieldGroup><Field><FieldLabel htmlFor="new-report-group">Group</FieldLabel><NativeSelect id="new-report-group" value={groupId} onChange={e => setGroupId(e.target.value)} disabled={pending}>{groups.filter(group => group.reportEnabled).map(group => <NativeSelectOption key={group.id} value={group.id}>{group.title}</NativeSelectOption>)}</NativeSelect></Field><Field><FieldLabel htmlFor="new-report-kind">Report type</FieldLabel><NativeSelect id="new-report-kind" value={kind} onChange={e => setKind(e.target.value as ReportKind)} disabled={pending}>{Object.entries(reportLabels).map(([value, label]) => <NativeSelectOption key={value} value={value}>{label}</NativeSelectOption>)}</NativeSelect></Field><ErrorNotice error={error} /></FieldGroup><div className="form-actions"><Button disabled={pending || !groupId}>{pending ? "Opening…" : "Continue"}</Button></div></form>;
 }
 
 export function ReportDialog({ selection, close, onSaved }: { selection: ReportSelection | null; close: () => void; onSaved: () => void }) {
-  return <Dialog open={!!selection} onOpenChange={open => { if (!open) close(); }}><DialogContent className="report-dialog"><DialogHeader><DialogTitle>{selection ? reportLabels[selection.kind] : ""} report</DialogTitle><DialogDescription>{selection?.group.title} · {selection?.group.roundId}</DialogDescription></DialogHeader>{selection ? <ReportEditor key={`${selection.group.id}-${selection.kind}-${selection.report?.id || "new"}`} selection={selection} onSaved={onSaved} /> : null}</DialogContent></Dialog>;
+  return <Dialog open={!!selection} onOpenChange={open => { if (!open) close(); }}><DialogContent className="report-dialog"><DialogHeader><DialogTitle>{selection ? reportLabels[selection.kind] : ""} report</DialogTitle><DialogDescription>{selection?.group.title} · {selection?.report?.title || selection?.group.roundId}</DialogDescription></DialogHeader>{selection ? <ReportEditor key={`${selection.group.id}-${selection.kind}-${selection.report?.id || "new"}`} selection={selection} onSaved={onSaved} /> : null}</DialogContent></Dialog>;
 }
 function ReportEditor({ selection, onSaved }: { selection: ReportSelection; onSaved: () => void }) {
   const { session } = useSession(); const { group, kind } = selection;

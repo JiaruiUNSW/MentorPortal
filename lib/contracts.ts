@@ -64,7 +64,10 @@ export interface GroupDto {
   menteeCount: number;
   attendedCount: number;
   week1Reports: number;
+  /** Legacy submitted-count summary; it does not limit how many meet-ups a group can have. */
   meetupReports: number;
+  /** All saved meet-ups, including drafts/unknown states, only when the complete count is known. */
+  meetupCount?: number;
   completionReports: number;
   firstAttendanceUpdatedAt: Timestamp | null;
   attendanceUpdatedAt: Timestamp | null;
@@ -209,6 +212,7 @@ export interface RedemptionDto {
 }
 
 type ListPayload = { cursor?: string; limit?: number };
+/** Omitting reportId creates a new report. Meet-ups may repeat within a group; edits target one ID. */
 type ReportEdit = { groupId: Id; reportId?: Id; expectedVersion?: RecordVersion; submit?: boolean };
 type AttachmentParent = { parentKind: ParentKind; parentId?: Id; groupId?: Id };
 export interface OperationPayloads {

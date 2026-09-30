@@ -8,7 +8,22 @@
     "opaqueHandleCharacters": 1010,
     "parentKind": "meetupReport"
   },
-  "binaryFixtures": "PNG is a generated1x1 test image; HEIC/HEIF are minimal ISO-BMFF signature-test fixtures, not decodable photographs.",
+  "multipleMeetups": {
+    "groupId": 900101,
+    "reportIds": [
+      900201,
+      900202,
+      900203
+    ],
+    "meetupCount": 3,
+    "meetupReports": 2,
+    "expenseReportLinks": {
+      "900301": 900201,
+      "900302": 900203
+    },
+    "meaning": "Complete saved-row count is separate from legacy submitted counter; first/second milestones are not a business cap."
+  },
+  "binaryFixtures": "PNG is a generated 1x1 test image; HEIC/HEIF are minimal ISO-BMFF signature-test fixtures, not decodable photographs.",
   "responses": [
     {
       "operation": "bootstrap",
@@ -71,6 +86,16 @@
       "schema": "../../schemas/rewards.list.response.schema.json"
     },
     {
+      "operation": "groups.get",
+      "file": "responses/groups.get.multiple-meetups.json",
+      "schema": "../../schemas/groups.get.response.schema.json"
+    },
+    {
+      "operation": "reports.list",
+      "file": "responses/reports.list.multiple-meetups.json",
+      "schema": "../../schemas/reports.list.response.schema.json"
+    },
+    {
       "operation": "attachments.download",
       "file": "responses/attachments.download.png.json",
       "schema": "../../schemas/attachments.download.response.schema.json"
@@ -109,7 +134,11 @@
     },
     {
       "file": "flow-contract-groups.get.json",
-      "sha256": "1a0e829d66b6493e7830388383d77e267251a85c296f164cb6a575bbc595679d"
+      "sha256": "e8025103e0c82d6cbd9a0b4c4c08c41ad6eae4a045a993186e4d8d787aaa7a85"
+    },
+    {
+      "file": "flow-contract-groups.get.multiple-meetups.json",
+      "sha256": "78901c7f7059491425dce7848cc06dd7a823d71a77d822715f23b4ca1d6f9c63"
     },
     {
       "file": "flow-contract-groups.list.json",
@@ -130,6 +159,10 @@
     {
       "file": "flow-contract-reports.list.json",
       "sha256": "21e6ec3156f2b32c7f18c15fd41543858fb063a3042f5f78a1d194b7fb8ad033"
+    },
+    {
+      "file": "flow-contract-reports.list.multiple-meetups.json",
+      "sha256": "f82930d63e065e96a98f1479dd63de28a07323067c7036bdebdde20d0297571c"
     },
     {
       "file": "flow-contract-rewards.list.json",

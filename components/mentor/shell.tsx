@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { ArrowRightLeft, CircleHelp, FileText, Menu, ShoppingCart, UserRound, UsersRound, Wallet } from "lucide-react";
+import { ArrowRightLeft, CircleHelp, CreditCard, FileText, Menu, ShoppingCart, UserRound, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,7 +9,7 @@ import { ErrorNotice, Initials } from "./ui";
 import { useSession } from "./session";
 export const navigation = [
   { id: "groups", label: "My Groups", icon: UsersRound }, { id: "reports", label: "Reports", icon: FileText },
-  { id: "balance", label: "Balance", icon: Wallet }, { id: "transactions", label: "Transactions", icon: ArrowRightLeft },
+  { id: "balance", label: "Balance", icon: CreditCard }, { id: "transactions", label: "Transactions", icon: ArrowRightLeft },
   { id: "store", label: "Credit Store", icon: ShoppingCart }, { id: "profile", label: "My Profile", icon: UserRound },
   { id: "support", label: "Support", icon: CircleHelp },
 ] as const;
@@ -20,7 +20,7 @@ export function PortalShell({ active, navigate, children }: { active: View; navi
   const [menuOpen, setMenuOpen] = useState(false); const [accountOpen, setAccountOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false); const [error, setError] = useState<Error | null>(null);
   const name = session?.user?.displayName || "Mentor"; const preview = session?.mode === "demo";
-  const account = <button className="account-button" onClick={() => setAccountOpen(true)} aria-label={`Account for ${name}`}><Initials name={name} /><span><strong>{name}</strong><small>Mentor</small></span></button>;
+  const account = <button className="account-button" onClick={() => { setMenuOpen(false); setAccountOpen(true); }} aria-label={`Account for ${name}`}><Initials name={name} /><span><strong>{name}</strong><small>Mentor</small></span></button>;
   async function signOut() { setSigningOut(true); setError(null); try { await logout(); } catch (e) { setError(e as Error); setSigningOut(false); } }
   return <div className="portal-shell"><a className="skip-link" href="#main-content">Skip to content</a>
     <aside className="desktop-sidebar"><a className="portal-brand" href="#groups" onClick={e => { e.preventDefault(); navigate("groups"); }}>Mentor Portal</a><NavLinks active={active} navigate={navigate} />{account}</aside>

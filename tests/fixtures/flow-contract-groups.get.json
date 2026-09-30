@@ -25,7 +25,8 @@
       "firstMeetupReportedAt": "2026-09-29T05:00:00Z",
       "secondMeetupReportedAt": null,
       "completedAt": null,
-      "attendedCount": 1
+      "attendedCount": 1,
+      "meetupCount": 1
     },
     "mentees": [
       {

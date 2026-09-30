@@ -49,6 +49,10 @@ function owned<T extends { id: string }>(items: T[], id: string): T {
   return item;
 }
 export function ownedGroup(state: DemoState, groupId: string): GroupDto { return owned(state.groups, groupId); }
+function groupSummary(state: DemoState, group: GroupDto): GroupDto {
+  // Derive this on read so existing persisted preview records need no migration or reseeding.
+  return { ...group, meetupCount: state.reports.filter(report => report.groupId === group.id && report.kind === 'meetup').length };
+}
 function reportWritable(state: DemoState, groupId: string): GroupDto {
   const group = ownedGroup(state, groupId);
   if (!group.reportEnabled) fail('EDIT_NOT_ALLOWED', 'Reports and attendance are closed for this group.', 403);
@@ -76,9 +80,9 @@ function page<T>(items: T[], payload: { cursor?: string; limit?: number }) {
 export function readDemo(state: DemoState, request: ClientRequest): unknown {
   const p = request.payload;
   switch (request.operation) {
-    case 'bootstrap': return { mentor: { id: state.profile.id, displayName: state.profile.displayName, preferredName: state.profile.preferredName, communicationEmail: state.profile.communicationEmail }, balance: state.balance, groups: state.groups, tasks: state.groups.flatMap(g => groupTasks(state, g).map(t => ({ ...t, groupId: g.id }))), mode: 'demo', previewLabel: PREVIEW_LABEL };
-    case 'groups.list': { const v = p as OperationPayloads['groups.list']; return page(state.groups.filter(g => !v.period || v.period === 'all' || (v.period === 'current' ? g.groupStatus === 1 : v.period === 'past' ? g.groupStatus === 2 : g.groupStatus === 0)), v); }
-    case 'groups.get': { const group = ownedGroup(state, (p as OperationPayloads['groups.get']).groupId); return { group, mentees: state.mentees.filter(m => m.groupId === group.id), reports: state.reports.filter(r => r.groupId === group.id), expenses: state.expenses.filter(e => e.groupId === group.id), tasks: groupTasks(state, group) }; }
+    case 'bootstrap': return { mentor: { id: state.profile.id, displayName: state.profile.displayName, preferredName: state.profile.preferredName, communicationEmail: state.profile.communicationEmail }, balance: state.balance, groups: state.groups.map(group => groupSummary(state, group)), tasks: state.groups.flatMap(g => groupTasks(state, g).map(t => ({ ...t, groupId: g.id }))), mode: 'demo', previewLabel: PREVIEW_LABEL };
+    case 'groups.list': { const v = p as OperationPayloads['groups.list']; return page(state.groups.filter(g => !v.period || v.period === 'all' || (v.period === 'current' ? g.groupStatus === 1 : v.period === 'past' ? g.groupStatus === 2 : g.groupStatus === 0)).map(group => groupSummary(state, group)), v); }
+    case 'groups.get': { const group = ownedGroup(state, (p as OperationPayloads['groups.get']).groupId); return { group: groupSummary(state, group), mentees: state.mentees.filter(m => m.groupId === group.id), reports: state.reports.filter(r => r.groupId === group.id), expenses: state.expenses.filter(e => e.groupId === group.id), tasks: groupTasks(state, group) }; }
     case 'reports.list': { const v = p as OperationPayloads['reports.list']; if (v.groupId) ownedGroup(state, v.groupId); return page(state.reports.filter(r => (!v.groupId || r.groupId === v.groupId) && (!v.kind || r.kind === v.kind)), v); }
     case 'reports.get': { const v = p as OperationPayloads['reports.get']; const report = owned(state.reports, v.reportId); if (report.kind !== v.kind) fail('RECORD_NOT_FOUND', 'The report is unavailable.', 404); ownedGroup(state, report.groupId); return { report }; }
     case 'balance.get': return { ...state.balance, ranking: [{ rank: 1, mentorName: 'Preview Mentor Rowan', roundCount: 5, groupCount: 8, currentCredit: 280, isCurrentMentor: false }, { rank: 2, mentorName: 'Preview Mentor Sage', roundCount: 4, groupCount: 6, currentCredit: 210, isCurrentMentor: false }, { rank: 3, mentorName: state.profile.displayName, roundCount: state.balance.roundCount, groupCount: state.groups.length, currentCredit: state.balance.balance, isCurrentMentor: true }], creditCriteria: CREDIT_CRITERIA };
@@ -145,7 +149,7 @@ export function writeDemo(original: DemoState, request: ClientRequest, context: 
       const group = reportWritable(state, v.groupId); expectVersion(group.version, v.expectedVersion);
       for (const entry of v.entries) { const mentee = owned(state.mentees, entry.menteeId); if (mentee.groupId !== group.id) fail('OWNERSHIP_DENIED', 'A mentee does not belong to this group.', 403); expectVersion(mentee.version, entry.expectedVersion); mentee.attended = entry.attended; mentee.attendanceRecorded = true; mentee.version = nextVersion(mentee.version); }
       group.attendedCount = state.mentees.filter(m => m.groupId === group.id && m.attended).length; group.firstAttendanceUpdatedAt ??= now; group.attendanceUpdatedAt = now; group.version = nextVersion(group.version);
-      data = { group, mentees: state.mentees.filter(m => m.groupId === group.id) }; break;
+      data = { group: groupSummary(state, group), mentees: state.mentees.filter(m => m.groupId === group.id) }; break;
     }
     case 'reports.week1.save': case 'reports.meetup.save': case 'reports.completion.save': {
       const v = p as OperationPayloads['reports.meetup.save'] & OperationPayloads['reports.week1.save'] & OperationPayloads['reports.completion.save'];
@@ -161,7 +165,7 @@ export function writeDemo(original: DemoState, request: ClientRequest, context: 
       const submitted = state.reports.filter(r => r.groupId === group.id && r.submissionState === 'submitted');
       group.week1Reports = submitted.filter(r => r.kind === 'week1').length; group.meetupReports = submitted.filter(r => r.kind === 'meetup').length; group.completionReports = submitted.filter(r => r.kind === 'completion').length;
       if (v.submit !== false) { if (kind === 'week1') group.week1ReportedAt ??= now; if (kind === 'completion') group.completedAt ??= now; if (kind === 'meetup') { group.firstMeetupReportedAt ??= now; if (group.meetupReports > 1) group.secondMeetupReportedAt ??= now; } }
-      group.version = nextVersion(group.version); data = { report, group }; break;
+      group.version = nextVersion(group.version); data = { report, group: groupSummary(state, group) }; break;
     }
     case 'expenses.save': {
       const v = p as OperationPayloads['expenses.save']; const group = reportWritable(state, v.groupId); const report = owned(state.reports, v.meetupReportId);
