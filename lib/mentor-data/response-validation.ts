@@ -1,0 +1,39 @@
+import { z } from 'zod';
+import type { Operation } from '../contracts';
+import { fail } from './errors';
+const s = z.string().max(12000);
+const id = z.number().int().positive().safe().transform(String);
+const version = z.string().min(1).max(100).regex(/^(?:[1-9]\d{0,9}|(?:W\/)?"[A-Za-z0-9{}.,_-]{1,90}")$/);
+const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const time = z.string().datetime({ offset: true }).nullable();
+const mime = z.enum(['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'application/pdf']);
+// Legacy metadata has wider limits than new uploads. Source handles stay server-only:
+// projectLiveAttachments replaces them with short, per-account opaque D1 handles.
+const attachment = z.object({ id: z.string().min(1).max(2048).regex(/^[A-Za-z0-9_-]+$/), fileName: z.string().min(1).max(255), mimeType: mime, sizeBytes: z.number().int().safe().nonnegative().nullable(), parentKind: z.enum(['meetupReport','expense','ticket']), parentId: id });
+const mentor = z.object({ id, displayName: s, preferredName: s, communicationEmail: z.string().email().max(254) });
+const group = z.object({ id, version, title: s, roundId: s, startDate: date.nullable(), type: s, mode: s, groupStatus: z.number().int().nullable(), reportEnabled: z.boolean(), mplName: s, mplCommunicationEmail: z.string().max(254), menteeCount: z.number().int().nonnegative(), attendedCount: z.number().int().nonnegative(), week1Reports: z.number().int().nonnegative(), meetupReports: z.number().int().nonnegative(), completionReports: z.number().int().nonnegative(), firstAttendanceUpdatedAt: time, attendanceUpdatedAt: time, week1ReportedAt: time, firstMeetupReportedAt: time, secondMeetupReportedAt: time, completedAt: time });
+const mentee = z.object({ id, version, firstName: s, lastName: s, gender: s, nationality: s, under18: s, visa: s, program: s, attended: z.boolean(), attendanceRecorded: z.boolean().default(true) });
+const task = z.object({ key: z.enum(['attendance.first','report.week1','report.meetup1','report.meetup2','attendance.final','report.completion']), label: s, deadline: date.nullable(), status: z.enum(['Completed','Ongoing','Late','Fail','Unavailable']) });
+const report = z.object({ id, version, kind: z.enum(['week1','meetup','completion']), groupId: id, title: s, createdAt: time, modifiedAt: time, reviewStatus: z.enum(['submitted','read','accepted']), submissionState: z.enum(['submitted','repair_required','unknown']), question: s.optional(), flagComment: s.optional(), otherGroup: s.optional(), meetupDate: date.optional(), attendance: z.number().int().nonnegative().optional(), description: s.optional(), isUseGC: z.boolean().optional(), isRequiredSC: z.boolean().optional(), scComment: s.optional(), keyTakeaways: s.optional(), mostHelpful: s.optional(), isJointAgain: z.boolean().optional(), attachments: z.array(attachment).max(50) });
+const expense = z.object({ id, version, groupId: id, meetupReportId: id, amount: z.number().finite().nonnegative().max(10000), currency: z.literal('AUD'), reviewStatus: z.enum(['submitted','read','accepted']), processingStatus: z.enum(['not_requested','pending','processed','needs_review','unknown']), attachments: z.array(attachment).max(50) });
+const balance = z.object({ balance: z.number().finite(), totalCredit: z.number().finite(), roundCount: z.number().int().nonnegative(), milestone: z.number().finite(), milestoneRound: z.number().int().nonnegative(), reserved: z.number().finite().nonnegative().default(0), ranking: z.array(z.object({ rank: z.number().int().positive(), mentorName: s, roundCount: z.number().int().nonnegative(), groupCount: z.number().int().nonnegative(), currentCredit: z.number().finite(), isCurrentMentor: z.boolean() })).max(100).optional(), creditCriteria: z.array(z.object({ category: z.enum(['Basic','Bonus','Milestone','Award']), label: s, points: z.number().finite().nonnegative(), cadence: s })).max(100).optional() });
+const transaction = z.object({ id, transactionId: s, type: s, group: s, amount: z.number().finite(), timestamp: time, notes: s, issuer: s });
+const reward = z.object({ id, name: s, inStock: z.boolean(), points: z.number().finite().nonnegative(), discountPoints: z.number().finite().nonnegative().nullable(), effectivePoints: z.number().finite().nonnegative(), productType: s, imageUrl: z.string().max(500).nullable().transform(v => v && /^\/[^/]/.test(v) ? v : null) });
+const option = z.object({ id, rewardId: id, label: s, type: z.enum(['Color','Size']), inStock: z.boolean(), extraCost: z.number().finite() });
+const profile = mentor.extend({ version, country: s, phoneNumber: s, communicationChannels: z.array(s).max(20), programs: z.array(s).max(20), stream: s, otherStream: s, wwcc: s, wwccExpiryDate: date.nullable(), dateOfBirth: date.nullable() });
+const choices = z.object({ communicationChannels: z.array(s).max(50), programs: z.array(s).max(50), streams: z.array(s).max(50) });
+const ticket = z.object({ id, version, title: s, description: s, status: s, staffName: s, staffComment: s, createdAt: time, modifiedAt: time, attachments: z.array(attachment).max(50) });
+const redemption = z.object({ id, requestReference: s, rewardId: id, rewardName: s, optionIds: z.array(id).max(5), comment: s, points: z.number().finite().nonnegative(), status: z.enum(['pending','processing','approved','rejected','needs_review']), creditState: z.enum(['not_debited','reserved','debited','refunded','needs_review']), createdAt: z.string().datetime({ offset: true }) });
+const page = (item: z.ZodTypeAny) => z.object({ items: z.array(item).max(50), nextCursor: z.string().max(100).nullable() });
+const schemas: Record<Operation, z.ZodTypeAny> = {
+  bootstrap: z.object({ mentor, balance, groups: z.array(group).max(100), tasks: z.array(task.extend({groupId:id})).max(1000) }).transform(v => ({...v,mode:'live',previewLabel:null})),
+  'groups.list': page(group), 'groups.get': z.object({ group, mentees: z.array(mentee).max(500), reports: z.array(report).max(500), expenses: z.array(expense).max(500), tasks: z.array(task).max(20) }),
+  'reports.list': z.object({ items: z.array(report).max(100), nextCursor: z.null() }), 'reports.get': z.object({report}), 'balance.get': balance, 'transactions.list': page(transaction), 'rewards.list': page(reward), 'rewards.get': z.object({reward,options:z.array(option).max(100)}), 'profile.get': z.object({profile,choices}), 'tickets.list': page(ticket), 'tickets.get': z.object({ticket}), 'redemptions.list': page(redemption),
+  'attendance.save': z.object({group,mentees:z.array(mentee).max(500)}), 'reports.week1.save': z.object({report,group}), 'reports.meetup.save': z.object({report,group}), 'reports.completion.save': z.object({report,group}), 'expenses.save': z.object({expense}),
+  'attachments.upload': z.object({attachment,parentVersion:version}), 'attachments.download': z.object({fileName:z.string().min(1).max(255),mimeType:mime,contentBase64:z.string().max(6990508),sizeBytes:z.number().int().positive().max(5242880)}), 'attachments.delete': z.object({deleted:z.literal(true),parentVersion:version}), 'profile.update': z.object({profile}), 'redemptions.create': z.object({redemption:redemption.extend({status:z.literal('pending'),creditState:z.literal('not_debited')})}), 'tickets.create': z.object({ticket}), 'tickets.update': z.object({ticket}),
+};
+export function validateFlowData(operation: Operation, value: unknown): unknown {
+  const result = schemas[operation].safeParse(value);
+  if (!result.success) fail('UPSTREAM_UNAVAILABLE', 'The data service returned an invalid response.', 502, false);
+  return result.data;
+}

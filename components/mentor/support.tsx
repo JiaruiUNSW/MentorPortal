@@ -1,0 +1,37 @@
+"use client";
+import { useCallback, useState } from "react";
+import type { AttachmentDto, TicketDto } from "@/lib/contracts";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { mentorRequest } from "./api";
+import { Attachments } from "./attachments";
+import { TextField } from "./form-fields";
+import { useMutation, usePagedResource, useResource } from "./hooks";
+import { dateLabel, EmptyState, ErrorNotice, LoadingState, PageHeader, StatusMark, SuccessNotice } from "./ui";
+export function SupportView() {
+  const [search, setSearch] = useState(""); const [searchInput, setSearchInput] = useState(""); const [selected, setSelected] = useState<string | null>(null); const [newOpen, setNewOpen] = useState(false);
+  const load = useCallback((cursor?: string) => mentorRequest("tickets.list", { ...(search ? { search } : {}), ...(cursor ? { cursor } : {}), limit: 25 }), [search]); const resource = usePagedResource(load);
+  return <><PageHeader title="Support" description="Raise an issue and follow your support requests."><Button onClick={() => setNewOpen(true)}>Open a ticket</Button></PageHeader><form className="search-form" onSubmit={event => { event.preventDefault(); setSearch(searchInput.trim()); }}><Field><FieldLabel htmlFor="ticket-search">Search your tickets</FieldLabel><div className="search-controls"><Input id="ticket-search" type="search" value={searchInput} onChange={e => setSearchInput(e.target.value)} maxLength={100} /><Button variant="outline">Search</Button></div></Field></form><ErrorNotice error={resource.error} retry={resource.reload} />{resource.loading ? <LoadingState label="Loading tickets…" /> : resource.data?.items.length ? <div className="data-table"><Table><TableHeader><TableRow><TableHead>Issue</TableHead><TableHead>Status</TableHead><TableHead>Updated</TableHead><TableHead>Assigned to</TableHead><TableHead><span className="sr-only">Open ticket</span></TableHead></TableRow></TableHeader><TableBody>{resource.data.items.map(ticket => <TableRow key={ticket.id}><TableCell><strong>{ticket.title}</strong>{ticket.attachments.length ? <span className="cell-secondary">{ticket.attachments.length} attachment{ticket.attachments.length === 1 ? "" : "s"}</span> : null}</TableCell><TableCell><StatusMark complete={ticket.status === "Closed"}>{ticket.status}</StatusMark></TableCell><TableCell>{dateLabel(ticket.modifiedAt || ticket.createdAt)}</TableCell><TableCell>{ticket.staffName || "Awaiting assignment"}</TableCell><TableCell><Button variant="outline" onClick={() => setSelected(ticket.id)}>View ticket</Button></TableCell></TableRow>)}</TableBody></Table></div> : !resource.error ? <EmptyState title={search ? "No matching tickets" : "No tickets yet"}>{search ? "Try another search term." : "Open a ticket when you need help with the portal or your mentoring activity."}</EmptyState> : null}<ErrorNotice error={resource.pageError} retry={resource.more} />{resource.data?.nextCursor ? <div className="load-more"><Button variant="outline" onClick={resource.more} disabled={resource.loadingMore}>{resource.loadingMore ? "Loading…" : "Load more tickets"}</Button></div> : null}
+    <Dialog open={newOpen || !!selected} onOpenChange={open => { if (!open) { setNewOpen(false); setSelected(null); } }}><DialogContent className="report-dialog"><DialogHeader><DialogTitle>{newOpen ? "Open a ticket" : "Support ticket"}</DialogTitle><DialogDescription>{newOpen ? "Tell the support team what happened. You can include attachments." : "View the latest response and update your issue details."}</DialogDescription></DialogHeader>{newOpen ? <TicketForm onSaved={ticket => { setNewOpen(false); setSelected(ticket.id); void resource.reload(); }} /> : selected ? <TicketDetail ticketId={selected} onSaved={() => void resource.reload()} /> : null}</DialogContent></Dialog>
+  </>;
+}
+function TicketDetail({ ticketId, onSaved }: { ticketId: string; onSaved: () => void }) {
+  const load = useCallback(() => mentorRequest("tickets.get", { ticketId }), [ticketId]); const resource = useResource(load);
+  if (resource.loading) return <LoadingState label="Loading ticket…" />; if (!resource.data) return <ErrorNotice error={resource.error} retry={resource.reload} />;
+  return <TicketForm key={resource.data.ticket.id} ticket={resource.data.ticket} onSaved={ticket => { resource.setData({ ticket }); onSaved(); }} />;
+}
+function TicketForm({ ticket, onSaved }: { ticket?: TicketDto; onSaved: (ticket: TicketDto) => void }) {
+  const [current, setCurrent] = useState(ticket); const [title, setTitle] = useState(ticket?.title || ""); const [description, setDescription] = useState(ticket?.description || ""); const [files, setFiles] = useState<AttachmentDto[]>(ticket?.attachments || []); const [version, setVersion] = useState(ticket?.version); const [uploading, setUploading] = useState(false); const [saved, setSaved] = useState(false); const mutation = useMutation();
+  const closed = current?.status === "Closed"; const busy = mutation.pending || uploading;
+  async function submit(event: React.FormEvent) {
+    event.preventDefault(); setSaved(false); const result = current ? await mutation.run("tickets.update", { ticketId: current.id, expectedVersion: version || current.version, title, description }) : await mutation.run("tickets.create", { title, description, attachmentIds: files.map(file => file.id) });
+    if (result) { setCurrent(result.ticket); setVersion(result.ticket.version); setFiles(result.ticket.attachments); setSaved(true); onSaved(result.ticket); }
+  }
+  return <form className="form-stack" onSubmit={submit}>{saved ? <SuccessNotice>Your ticket has been saved.</SuccessNotice> : null}{current ? <div className="ticket-meta"><StatusMark complete={closed}>{current.status}</StatusMark><span className="muted">Updated {dateLabel(current.modifiedAt || current.createdAt)}</span></div> : null}{current?.staffComment ? <section className="support-reply"><h3>Latest response</h3><p className="reply-author">{current.staffName || "Support team"}</p><p className="preserve-lines">{current.staffComment}</p></section> : current ? <p className="form-hint">The support team has not replied yet.</p> : null}
+    {closed ? <><p className="form-hint">This ticket is closed. Its details and attachments are read-only.</p><dl className="record-details"><div><dt>Issue name</dt><dd>{title}</dd></div><div><dt>Description</dt><dd>{description}</dd></div></dl></> : <FieldGroup><TextField label="Issue name" value={title} onChange={setTitle} required maxLength={200} disabled={busy} /><TextField label="Description" value={description} onChange={setDescription} multiline required maxLength={10000} disabled={busy} description="Include what you expected, what happened and any relevant details." /></FieldGroup>}
+    <Attachments context={{ parentKind: "ticket", ...(current ? { parentId: current.id, version } : {}) }} files={files} onChange={setFiles} onVersion={setVersion} onBusy={setUploading} disabled={mutation.pending} readOnly={closed} /><ErrorNotice error={mutation.error} />{!closed ? <div className="form-actions"><Button disabled={busy}>{mutation.pending ? "Saving ticket…" : current ? "Save changes" : "Submit ticket"}</Button></div> : null}
+  </form>;
+}

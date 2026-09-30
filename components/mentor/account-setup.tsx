@@ -1,0 +1,28 @@
+"use client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { authenticate } from "./api";
+import { TextField } from "./form-fields";
+import { useSession } from "./session";
+import { ErrorNotice, LoadingState } from "./ui";
+function AccountFrame({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <div className="auth-page"><Link className="portal-brand auth-brand" href="/">Mentor Portal</Link><main className="auth-surface"><h1>{title}</h1><p className="auth-intro">{description}</p>{children}<p className="auth-note"><Link href="/login">Return to sign in</Link></p></main></div>; }
+function PasswordFields({ password, setPassword, confirm, setConfirm, disabled }: { password: string; setPassword: (value: string) => void; confirm: string; setConfirm: (value: string) => void; disabled: boolean }) {
+  return <><Field><FieldLabel htmlFor="new-password">Create password *</FieldLabel><Input id="new-password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={password} onChange={e => setPassword(e.target.value)} disabled={disabled} /><FieldDescription>Use 12–128 characters. Spaces are allowed.</FieldDescription></Field><Field><FieldLabel htmlFor="confirm-password">Confirm password *</FieldLabel><Input id="confirm-password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={confirm} onChange={e => setConfirm(e.target.value)} disabled={disabled} /></Field></>;
+}
+export function ActivateForm() {
+  const router = useRouter(); const tokenRead = useRef(false);
+  const { loading, error, refresh, accept } = useSession(); const [token, setToken] = useState<string | null>(null); const [password, setPassword] = useState(""); const [confirm, setConfirm] = useState(""); const [pending, setPending] = useState(false); const [formError, setFormError] = useState<Error | null>(null);
+  useEffect(() => { if (tokenRead.current) return; tokenRead.current = true; const params = new URLSearchParams(window.location.hash.slice(1)); const value = params.get("token") || ""; window.history.replaceState(null, "", window.location.pathname); void Promise.resolve(value).then(setToken); }, []);
+  async function submit(event: React.FormEvent) { event.preventDefault(); setFormError(null); if (password !== confirm) { setFormError(new Error("The passwords do not match.")); return; } setPending(true); try { const result = await authenticate("activate", { token, password }); accept(result); setPassword(""); setConfirm(""); setToken(null); router.replace("/"); } catch (e) { setFormError(e as Error); setPending(false); } }
+  return <AccountFrame title="Activate your account" description="Set a password to accept your mentor invitation.">{loading || token === null ? <LoadingState label="Checking your invitation…" /> : error ? <ErrorNotice error={error} retry={refresh} /> : !token ? <ErrorNotice error={new Error("The invitation token is missing. Open the complete invitation link supplied by your administrator.")} /> : <form onSubmit={submit}><FieldGroup><PasswordFields password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} disabled={pending} /><ErrorNotice error={formError} /></FieldGroup><div className="form-actions"><Button disabled={pending}>{pending ? "Activating…" : "Activate account"}</Button></div></form>}</AccountFrame>;
+}
+export function SetupForm() {
+  const router = useRouter();
+  const { loading, error, refresh, accept } = useSession(); const [setupToken, setSetupToken] = useState(""); const [email, setEmail] = useState(""); const [name, setName] = useState(""); const [password, setPassword] = useState(""); const [confirm, setConfirm] = useState(""); const [pending, setPending] = useState(false); const [formError, setFormError] = useState<Error | null>(null);
+  async function submit(event: React.FormEvent) { event.preventDefault(); setFormError(null); if (password !== confirm) { setFormError(new Error("The passwords do not match.")); return; } setPending(true); try { const result = await authenticate("setup", { setupToken, email, displayName: name, password }); accept(result); setSetupToken(""); setPassword(""); setConfirm(""); router.replace("/manage"); } catch (e) { setFormError(e as Error); setPending(false); } }
+  return <AccountFrame title="Set up account access" description="Create the first account administrator using the setup token from the portal owner.">{loading ? <LoadingState /> : error ? <ErrorNotice error={error} retry={refresh} /> : <form onSubmit={submit}><FieldGroup><Field><FieldLabel htmlFor="setup-token">Setup token *</FieldLabel><Input id="setup-token" type="password" autoComplete="off" required minLength={32} value={setupToken} onChange={e => setSetupToken(e.target.value)} disabled={pending} /></Field><TextField label="Your name" value={name} onChange={setName} required maxLength={100} disabled={pending} /><TextField label="Email address" value={email} onChange={setEmail} type="email" required maxLength={254} disabled={pending} /><PasswordFields password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} disabled={pending} /><ErrorNotice error={formError} /></FieldGroup><div className="form-actions"><Button disabled={pending}>{pending ? "Creating administrator…" : "Create administrator"}</Button></div></form>}</AccountFrame>;
+}

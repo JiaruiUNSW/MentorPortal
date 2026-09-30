@@ -1,0 +1,1 @@
+ALTER TABLE `mentor_files` ADD `source_attachment_id` text;

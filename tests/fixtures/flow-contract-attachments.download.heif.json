@@ -1,0 +1,15 @@
+{
+  "operation": "attachments.download",
+  "response": {
+    "schemaVersion": "1.0",
+    "requestId": "6fa132f4-d6c9-4c7a-9090-dcbf7d50f003",
+    "ok": true,
+    "data": {
+      "fileName": "synthetic-download.heif",
+      "mimeType": "image/heif",
+      "sizeBytes": 40,
+      "contentBase64": "AAAAHGZ0eXBtaWYxAAAAAG1pZjFtaWYxbXNmMQAAAAxtZGF0AAAAAA=="
+    },
+    "replayed": false
+  }
+}

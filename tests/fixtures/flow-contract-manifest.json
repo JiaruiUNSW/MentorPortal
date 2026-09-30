@@ -1,0 +1,152 @@
+{
+  "sourceMode": "native DTO projection expressions evaluated against synthetic rows; not captured tenant responses or a Flow runtime simulation",
+  "syntheticOnly": true,
+  "requestId": "6fa132f4-d6c9-4c7a-9090-dcbf7d50f003",
+  "historicalAttachmentBoundary": {
+    "count": 50,
+    "unicodeFilenameCharacters": 255,
+    "opaqueHandleCharacters": 1010,
+    "parentKind": "meetupReport"
+  },
+  "binaryFixtures": "PNG is a generated1x1 test image; HEIC/HEIF are minimal ISO-BMFF signature-test fixtures, not decodable photographs.",
+  "responses": [
+    {
+      "operation": "bootstrap",
+      "file": "responses/bootstrap.json",
+      "schema": "../../schemas/bootstrap.response.schema.json"
+    },
+    {
+      "operation": "groups.get",
+      "file": "responses/groups.get.json",
+      "schema": "../../schemas/groups.get.response.schema.json"
+    },
+    {
+      "operation": "groups.list",
+      "file": "responses/groups.list.json",
+      "schema": "../../schemas/groups.list.response.schema.json"
+    },
+    {
+      "operation": "reports.get",
+      "file": "responses/reports.get.json",
+      "schema": "../../schemas/reports.get.response.schema.json"
+    },
+    {
+      "operation": "reports.list",
+      "file": "responses/reports.list.json",
+      "schema": "../../schemas/reports.list.response.schema.json"
+    },
+    {
+      "operation": "profile.get",
+      "file": "responses/profile.get.json",
+      "schema": "../../schemas/profile.get.response.schema.json"
+    },
+    {
+      "operation": "profile.update",
+      "file": "responses/profile.update.json",
+      "schema": "../../schemas/profile.update.response.schema.json"
+    },
+    {
+      "operation": "tickets.create",
+      "file": "responses/tickets.create.json",
+      "schema": "../../schemas/tickets.create.response.schema.json"
+    },
+    {
+      "operation": "tickets.get",
+      "file": "responses/tickets.get.json",
+      "schema": "../../schemas/tickets.get.response.schema.json"
+    },
+    {
+      "operation": "tickets.list",
+      "file": "responses/tickets.list.json",
+      "schema": "../../schemas/tickets.list.response.schema.json"
+    },
+    {
+      "operation": "balance.get",
+      "file": "responses/balance.get.json",
+      "schema": "../../schemas/balance.get.response.schema.json"
+    },
+    {
+      "operation": "rewards.list",
+      "file": "responses/rewards.list.json",
+      "schema": "../../schemas/rewards.list.response.schema.json"
+    },
+    {
+      "operation": "attachments.download",
+      "file": "responses/attachments.download.png.json",
+      "schema": "../../schemas/attachments.download.response.schema.json"
+    },
+    {
+      "operation": "attachments.download",
+      "file": "responses/attachments.download.heic.json",
+      "schema": "../../schemas/attachments.download.response.schema.json"
+    },
+    {
+      "operation": "attachments.download",
+      "file": "responses/attachments.download.heif.json",
+      "schema": "../../schemas/attachments.download.response.schema.json"
+    }
+  ],
+  "fixtureFiles": [
+    {
+      "file": "flow-contract-attachments.download.heic.json",
+      "sha256": "20b69fc454c80b0e37f0c826bb92bff9f25502d7370abbbd1f7fd5f74bdda6f3"
+    },
+    {
+      "file": "flow-contract-attachments.download.heif.json",
+      "sha256": "dfccbd9e499947f9a7a0aba7103d4e658d5a57be178754a5aef625024279b785"
+    },
+    {
+      "file": "flow-contract-attachments.download.png.json",
+      "sha256": "618227c91f889d7a76e351f217418d7a3110974698b54070909ae6721a9da49e"
+    },
+    {
+      "file": "flow-contract-balance.get.json",
+      "sha256": "5b19ce922758202af16fd9eaeb9a5ec3793a8caa7b44bc24107ac2f15782c9e0"
+    },
+    {
+      "file": "flow-contract-bootstrap.json",
+      "sha256": "cfc8b55422ff8e873f12ff4456c2ee5c7509ef92fb3e53931a67df4db6913258"
+    },
+    {
+      "file": "flow-contract-groups.get.json",
+      "sha256": "1a0e829d66b6493e7830388383d77e267251a85c296f164cb6a575bbc595679d"
+    },
+    {
+      "file": "flow-contract-groups.list.json",
+      "sha256": "9e650926194626915cbed0427568e4a36b09395b37f84da376aad49f4c8a61e2"
+    },
+    {
+      "file": "flow-contract-profile.get.json",
+      "sha256": "76d10df93034ac4bd2ce0c22ce820d4a95d6574c5ef2cbf64c40a721e1821bf7"
+    },
+    {
+      "file": "flow-contract-profile.update.json",
+      "sha256": "7860f39b7db0be4b42cec09243e57ad046fb23b540a96e54fbdae59d664a44bb"
+    },
+    {
+      "file": "flow-contract-reports.get.json",
+      "sha256": "eb598cf059c4f44c94fa83e4297a88e35deff0b14f57d507666d07a6a7b76681"
+    },
+    {
+      "file": "flow-contract-reports.list.json",
+      "sha256": "21e6ec3156f2b32c7f18c15fd41543858fb063a3042f5f78a1d194b7fb8ad033"
+    },
+    {
+      "file": "flow-contract-rewards.list.json",
+      "sha256": "f7c5ecb61227c656d22a4870c50134dac6809088c73156859de8b71fadf2701a"
+    },
+    {
+      "file": "flow-contract-tickets.create.json",
+      "sha256": "368debc26d8f42a580f1c2573dcf63bbab7f2da0f342635095b51c2354438315"
+    },
+    {
+      "file": "flow-contract-tickets.get.json",
+      "sha256": "368debc26d8f42a580f1c2573dcf63bbab7f2da0f342635095b51c2354438315"
+    },
+    {
+      "file": "flow-contract-tickets.list.json",
+      "sha256": "8f7aea72979135e789e8ee076617747d1bc2a709598d066a1eb009cc8156e209"
+    }
+  ],
+  "sourceGenerator": "Power Automate native DTO projection fixture generator (separate sanitized adapter build)"
+}

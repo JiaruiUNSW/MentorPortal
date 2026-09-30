@@ -1,0 +1,32 @@
+"use client";
+import { useCallback, useState } from "react";
+import type { ProfileChoices, ProfileDto } from "@/lib/contracts";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { mentorRequest } from "./api";
+import { CheckField, TextField } from "./form-fields";
+import { useMutation, useResource } from "./hooks";
+import { ErrorNotice, LoadingState, PageHeader, SuccessNotice } from "./ui";
+export function ProfileView() {
+  const load = useCallback(() => mentorRequest("profile.get", {}), []); const resource = useResource(load);
+  return <><PageHeader title="My Profile" description="Keep your contact, study and WWCC details up to date." /><ErrorNotice error={resource.error} retry={resource.reload} />{resource.loading ? <LoadingState label="Loading your profile…" /> : resource.data ? <ProfileForm profile={resource.data.profile} choices={resource.data.choices} /> : null}</>;
+}
+function isUnder18(date: string | null) { if (!date) return false; const birth = new Date(`${date}T12:00:00`); const today = new Date(); let age = today.getFullYear() - birth.getFullYear(); if (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) age--; return age < 18; }
+function ProfileForm({ profile, choices }: { profile: ProfileDto; choices: ProfileChoices }) {
+  const [version, setVersion] = useState(profile.version); const [country, setCountry] = useState(profile.country); const [phone, setPhone] = useState(profile.phoneNumber);
+  const [channels, setChannels] = useState(profile.communicationChannels); const [programs, setPrograms] = useState(profile.programs); const [stream, setStream] = useState(profile.stream); const [other, setOther] = useState(profile.otherStream);
+  const [under18, setUnder18] = useState(isUnder18(profile.dateOfBirth)); const [wwcc, setWwcc] = useState(profile.wwcc); const [expiry, setExpiry] = useState(profile.wwccExpiryDate || ""); const [dob, setDob] = useState(profile.dateOfBirth || "");
+  const [saved, setSaved] = useState(false); const [attempted, setAttempted] = useState(false); const mutation = useMutation();
+  async function submit(event: React.FormEvent) {
+    event.preventDefault(); setAttempted(true); setSaved(false); if (!channels.length || !programs.length) return;
+    const result = await mutation.run("profile.update", { expectedVersion: version, country, phoneNumber: phone, communicationChannels: channels, programs, stream, otherStream: other, under18, ...(under18 ? { dateOfBirth: dob } : { wwcc, wwccExpiryDate: expiry }) });
+    if (result) { setVersion(result.profile.version); setSaved(true); }
+  }
+  return <form className="profile-form form-stack" onSubmit={submit}>{saved ? <SuccessNotice>Your profile details have been updated.</SuccessNotice> : null}<p className="form-hint">Fields marked * are required. Contact Support to change your name or sign-in email.</p><section><h2 className="form-heading">Personal details</h2><FieldGroup><div className="form-grid"><Field><FieldLabel htmlFor="profile-name">Name</FieldLabel><Input id="profile-name" value={profile.displayName} readOnly /></Field><Field><FieldLabel htmlFor="profile-email">Nominated email</FieldLabel><Input id="profile-email" value={profile.communicationEmail} readOnly /></Field><TextField label="Nationality" value={country} onChange={setCountry} required maxLength={100} disabled={mutation.pending} /><TextField label="Phone number" value={phone} onChange={setPhone} type="tel" required maxLength={40} disabled={mutation.pending} /></div><ChoiceFields label="Social media and communication *" options={choices.communicationChannels} selected={channels} change={setChannels} disabled={mutation.pending} invalid={attempted && !channels.length} /><ChoiceFields label="UNSW College programme *" options={choices.programs} selected={programs} change={setPrograms} disabled={mutation.pending} invalid={attempted && !programs.length} /><Field><FieldLabel htmlFor="profile-major">Major *</FieldLabel><NativeSelect id="profile-major" value={stream} onChange={e => setStream(e.target.value)} required disabled={mutation.pending}><NativeSelectOption value="" disabled>Choose your major</NativeSelectOption>{[...new Set([...choices.streams, ...(stream ? [stream] : [])])].map(value => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}</NativeSelect></Field>{/^others?$/i.test(stream) ? <TextField label="Major — other" value={other} onChange={setOther} required maxLength={200} disabled={mutation.pending} /> : null}</FieldGroup></section><section className="form-section"><h2 className="form-heading">Working With Children Check</h2><FieldGroup><CheckField label="I am under 18" checked={under18} onChange={setUnder18} disabled={mutation.pending} />{under18 ? <TextField label="Date of birth" value={dob} onChange={setDob} type="date" required disabled={mutation.pending} /> : <div className="form-grid"><TextField label="WWCC number" value={wwcc} onChange={setWwcc} required maxLength={50} disabled={mutation.pending} /><TextField label="Expiry date" value={expiry} onChange={setExpiry} type="date" required disabled={mutation.pending} /></div>}</FieldGroup></section><ErrorNotice error={mutation.error} /><div className="form-actions"><Button disabled={mutation.pending}>{mutation.pending ? "Saving profile…" : "Save profile"}</Button></div></form>;
+}
+function ChoiceFields({ label, options, selected, change, disabled, invalid }: { label: string; options: string[]; selected: string[]; change: (values: string[]) => void; disabled: boolean; invalid: boolean }) {
+  return <FieldSet data-invalid={invalid}><FieldLegend>{label}</FieldLegend><div className="choice-grid">{[...new Set([...options, ...selected])].map((option, index) => <Field orientation="horizontal" key={option} className="check-field"><Checkbox id={`${label}-${index}`} checked={selected.includes(option)} aria-invalid={invalid} onCheckedChange={checked => change(checked ? [...selected, option] : selected.filter(value => value !== option))} disabled={disabled} /><FieldLabel htmlFor={`${label}-${index}`}>{option}</FieldLabel></Field>)}</div>{invalid ? <FieldError>Select at least one option.</FieldError> : null}</FieldSet>;
+}

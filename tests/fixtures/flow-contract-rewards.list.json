@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "6fa132f4-d6c9-4c7a-9090-dcbf7d50f003",
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "id": 900601,
+        "name": "Synthetic reward",
+        "inStock": true,
+        "points": 80,
+        "discountPoints": 60,
+        "effectivePoints": 60,
+        "productType": "Merchandise",
+        "imageUrl": null
+      }
+    ],
+    "nextCursor": null
+  },
+  "replayed": false
+}

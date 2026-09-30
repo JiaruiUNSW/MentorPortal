@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "6fa132f4-d6c9-4c7a-9090-dcbf7d50f003",
+  "ok": true,
+  "data": {
+    "profile": {
+      "id": 900001,
+      "displayName": "Synthetic Mentor",
+      "preferredName": "Synthetic Mentor",
+      "communicationEmail": "mentor@example.test",
+      "version": "\"5\"",
+      "country": "Australia",
+      "phoneNumber": "0400000000",
+      "otherStream": "",
+      "wwcc": "WWC-SYNTHETIC-FIXTURE",
+      "communicationChannels": [
+        "WhatsApp"
+      ],
+      "programs": [
+        "Diploma"
+      ],
+      "stream": "Science",
+      "wwccExpiryDate": "2028-12-31",
+      "dateOfBirth": "2000-01-01"
+    },
+    "choices": {
+      "communicationChannels": [
+        "WhatsApp",
+        "WeChat"
+      ],
+      "programs": [
+        "Diploma"
+      ],
+      "streams": [
+        "Science",
+        "Others"
+      ]
+    }
+  },
+  "replayed": false
+}

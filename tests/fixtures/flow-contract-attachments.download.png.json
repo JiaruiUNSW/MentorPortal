@@ -1,0 +1,15 @@
+{
+  "operation": "attachments.download",
+  "response": {
+    "schemaVersion": "1.0",
+    "requestId": "6fa132f4-d6c9-4c7a-9090-dcbf7d50f003",
+    "ok": true,
+    "data": {
+      "fileName": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界.png",
+      "mimeType": "image/png",
+      "sizeBytes": 69,
+      "contentBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNw6TgDAAKsAZkaoN/PAAAAAElFTkSuQmCC"
+    },
+    "replayed": false
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "x-mentor-bridge-key": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 512
+    },
+    "x-mentor-request-id": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "x-mentor-payload-sha256": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "x-mentor-files-validated-sha256": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "content-type": {
+      "const": "application/json"
+    }
+  },
+  "required": [
+    "x-mentor-bridge-key",
+    "x-mentor-request-id",
+    "content-type"
+  ]
+}

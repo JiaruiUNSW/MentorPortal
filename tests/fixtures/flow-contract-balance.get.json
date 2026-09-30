@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "6fa132f4-d6c9-4c7a-9090-dcbf7d50f003",
+  "ok": true,
+  "data": {
+    "balance": 240,
+    "totalCredit": 310,
+    "roundCount": 3,
+    "milestone": 60,
+    "milestoneRound": 1
+  },
+  "replayed": false
+}

@@ -1,0 +1,431 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "6fa132f4-d6c9-4c7a-9090-dcbf7d50f003",
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "id": 900201,
+        "version": "\"3\"",
+        "kind": "meetup",
+        "groupId": 900101,
+        "title": "Synthetic campus walk",
+        "createdAt": "2026-09-29T05:00:00Z",
+        "modifiedAt": "2026-09-29T05:05:00Z",
+        "reviewStatus": "submitted",
+        "submissionState": "unknown",
+        "attachments": [
+          {
+            "id": "55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WM55WMLnBuZw",
+            "fileName": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界.png",
+            "mimeType": "image/png",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTAxLmhlaWM",
+            "fileName": "synthetic-photo-01.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTAyLmhlaWM",
+            "fileName": "synthetic-photo-02.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTAzLmhlaWM",
+            "fileName": "synthetic-photo-03.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTA0LmhlaWM",
+            "fileName": "synthetic-photo-04.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTA1LmhlaWM",
+            "fileName": "synthetic-photo-05.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTA2LmhlaWM",
+            "fileName": "synthetic-photo-06.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTA3LmhlaWM",
+            "fileName": "synthetic-photo-07.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTA4LmhlaWM",
+            "fileName": "synthetic-photo-08.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTA5LmhlaWM",
+            "fileName": "synthetic-photo-09.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTEwLmhlaWM",
+            "fileName": "synthetic-photo-10.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTExLmhlaWM",
+            "fileName": "synthetic-photo-11.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTEyLmhlaWM",
+            "fileName": "synthetic-photo-12.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTEzLmhlaWM",
+            "fileName": "synthetic-photo-13.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTE0LmhlaWM",
+            "fileName": "synthetic-photo-14.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTE1LmhlaWM",
+            "fileName": "synthetic-photo-15.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTE2LmhlaWM",
+            "fileName": "synthetic-photo-16.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTE3LmhlaWM",
+            "fileName": "synthetic-photo-17.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTE4LmhlaWM",
+            "fileName": "synthetic-photo-18.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTE5LmhlaWM",
+            "fileName": "synthetic-photo-19.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTIwLmhlaWM",
+            "fileName": "synthetic-photo-20.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTIxLmhlaWM",
+            "fileName": "synthetic-photo-21.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTIyLmhlaWM",
+            "fileName": "synthetic-photo-22.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTIzLmhlaWM",
+            "fileName": "synthetic-photo-23.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTI0LmhlaWM",
+            "fileName": "synthetic-photo-24.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTI1LmhlaWM",
+            "fileName": "synthetic-photo-25.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTI2LmhlaWM",
+            "fileName": "synthetic-photo-26.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTI3LmhlaWM",
+            "fileName": "synthetic-photo-27.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTI4LmhlaWM",
+            "fileName": "synthetic-photo-28.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTI5LmhlaWM",
+            "fileName": "synthetic-photo-29.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTMwLmhlaWM",
+            "fileName": "synthetic-photo-30.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTMxLmhlaWM",
+            "fileName": "synthetic-photo-31.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTMyLmhlaWM",
+            "fileName": "synthetic-photo-32.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTMzLmhlaWM",
+            "fileName": "synthetic-photo-33.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTM0LmhlaWM",
+            "fileName": "synthetic-photo-34.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTM1LmhlaWM",
+            "fileName": "synthetic-photo-35.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTM2LmhlaWM",
+            "fileName": "synthetic-photo-36.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTM3LmhlaWM",
+            "fileName": "synthetic-photo-37.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTM4LmhlaWM",
+            "fileName": "synthetic-photo-38.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTM5LmhlaWM",
+            "fileName": "synthetic-photo-39.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQwLmhlaWM",
+            "fileName": "synthetic-photo-40.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQxLmhlaWM",
+            "fileName": "synthetic-photo-41.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQyLmhlaWM",
+            "fileName": "synthetic-photo-42.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQzLmhlaWM",
+            "fileName": "synthetic-photo-43.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQ0LmhlaWM",
+            "fileName": "synthetic-photo-44.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQ1LmhlaWM",
+            "fileName": "synthetic-photo-45.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQ2LmhlaWM",
+            "fileName": "synthetic-photo-46.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQ3LmhlaWM",
+            "fileName": "synthetic-photo-47.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQ4LmhlaWM",
+            "fileName": "synthetic-photo-48.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          },
+          {
+            "id": "c3ludGhldGljLXBob3RvLTQ5LmhlaWM",
+            "fileName": "synthetic-photo-49.heic",
+            "mimeType": "image/heic",
+            "sizeBytes": null,
+            "parentKind": "meetupReport",
+            "parentId": 900201
+          }
+        ],
+        "otherGroup": "",
+        "meetupDate": "2026-09-29",
+        "attendance": 2,
+        "description": "Synthetic fixture: campus orientation.",
+        "isUseGC": true,
+        "isRequiredSC": false,
+        "scComment": ""
+      }
+    ],
+    "nextCursor": null
+  },
+  "replayed": false
+}
