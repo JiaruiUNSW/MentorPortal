@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import type { AttachmentDto, ExpenseDto, GroupDto, ReportDto, ReportKind } from "@/lib/contracts";
 import { Button } from "@/components/ui/button";
@@ -58,9 +58,35 @@ function NewReportChooser({ groups, defaultGroupId, start }: { groups: GroupDto[
 }
 
 export function ReportDialog({ selection, close, onSaved }: { selection: ReportSelection | null; close: () => void; onSaved: () => void }) {
-  return <Dialog open={!!selection} onOpenChange={open => { if (!open) close(); }}><DialogContent className="report-dialog"><DialogHeader><DialogTitle>{selection ? reportLabels[selection.kind] : ""} report</DialogTitle><DialogDescription>{selection?.group.title} · {selection?.report?.title || selection?.group.roundId}</DialogDescription></DialogHeader>{selection ? <ReportEditor key={`${selection.group.id}-${selection.kind}-${selection.report?.id || "new"}`} selection={selection} onSaved={onSaved} /> : null}</DialogContent></Dialog>;
+  return <Dialog open={!!selection} onOpenChange={open => { if (!open) close(); }}><DialogContent className="report-dialog">{selection ? <ReportWorkflow key={`${selection.group.id}-${selection.kind}-${selection.report?.id || "new"}`} selection={selection} onSaved={onSaved} /> : null}</DialogContent></Dialog>;
 }
-function ReportEditor({ selection, onSaved }: { selection: ReportSelection; onSaved: () => void }) {
+function ReportWorkflow({ selection, onSaved }: { selection: ReportSelection; onSaved: () => void }) {
+  const [latestReport, setLatestReport] = useState(selection.report);
+  const [expense, setExpense] = useState<{ report: ReportDto; justSubmitted: boolean } | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const expenseReportId = expense?.report.id;
+
+  useEffect(() => {
+    if (!expenseReportId) return;
+    heading.current?.closest('[role="dialog"]')?.scrollTo({ top: 0 });
+    heading.current?.focus({ preventScroll: true });
+  }, [expenseReportId]);
+
+  function openExpense(report: ReportDto, justSubmitted = false) {
+    setLatestReport(report);
+    setExpense({ report, justSubmitted });
+  }
+
+  return <>
+    <DialogHeader><DialogTitle ref={heading} tabIndex={-1}>{expense ? "Expense report" : `${reportLabels[selection.kind]} report`}</DialogTitle><DialogDescription>{selection.group.title} · {expense?.report.title || latestReport?.title || selection.group.roundId}</DialogDescription></DialogHeader>
+    {expense ? <div className="form-stack">
+      {expense.justSubmitted ? <SuccessNotice>Your meet-up report has been submitted.</SuccessNotice> : null}
+      <ExpenseSection group={selection.group} report={expense.report} onSaved={() => { setExpense(value => value ? { ...value, justSubmitted: false } : null); onSaved(); }} />
+      <div className="form-actions"><Button variant="outline" onClick={() => setExpense(null)}>Back to meet-up report</Button></div>
+    </div> : <ReportEditor selection={{ ...selection, report: latestReport }} onSaved={onSaved} onExpense={openExpense} />}
+  </>;
+}
+function ReportEditor({ selection, onSaved, onExpense }: { selection: ReportSelection; onSaved: () => void; onExpense: (report: ReportDto, justSubmitted?: boolean) => void }) {
   const { session } = useSession(); const { group, kind } = selection;
   const [current, setCurrent] = useState(selection.report); const [version, setVersion] = useState(selection.report?.version);
   const [question, setQuestion] = useState(current?.question || ""); const [flag, setFlag] = useState(current?.flagComment || "");
@@ -80,12 +106,17 @@ function ReportEditor({ selection, onSaved }: { selection: ReportSelection; onSa
     if (kind === "week1") result = await mutation.run("reports.week1.save", { ...edit, question, flagComment: flag });
     if (kind === "meetup") result = await mutation.run("reports.meetup.save", { ...edit, title, otherGroup, meetupDate: date, attendance: Number(attendance), description, isUseGC: giftCard, isRequiredSC: special, scComment: specialComment, attachmentIds: files.map(file => file.id) });
     if (kind === "completion") result = await mutation.run("reports.completion.save", { ...edit, keyTakeaways: takeaways, mostHelpful: helpful, isJointAgain: again, flagComment: flag });
-    if (result) { setCurrent(result.report); setVersion(result.report.version); setFiles(result.report.attachments); setSaved(submit ? "Your report has been submitted. It is awaiting review." : "Your draft is saved. You can return to it from Reports."); onSaved(); }
+    if (result) {
+      setCurrent(result.report); setVersion(result.report.version); setFiles(result.report.attachments);
+      setSaved(submit ? "Your report has been submitted. It is awaiting review." : "Your draft is saved. You can return to it from Reports.");
+      onSaved();
+      if (submit && result.report.kind === "meetup" && result.report.submissionState === "submitted" && result.report.isUseGC) onExpense(result.report, true);
+    }
   }
-  if (readOnly) return <div className="form-stack">{saved ? <SuccessNotice>{saved}</SuccessNotice> : <StatusMark complete={current.submissionState === "submitted"}>{current.submissionState === "unknown" ? "Submission not confirmed" : "Submitted"} · {humanize(current.reviewStatus)}</StatusMark>}<ReportDetails report={current} /><Attachments context={{ parentKind: "meetupReport", parentId: current.id, groupId: group.id }} files={files} readOnly />{current.kind === "meetup" && current.isUseGC ? <ExpenseSection group={group} report={current} /> : null}</div>;
+  if (readOnly) return <div className="form-stack">{saved ? <SuccessNotice>{saved}</SuccessNotice> : <StatusMark complete={current.submissionState === "submitted"}>{current.submissionState === "unknown" ? "Submission not confirmed" : "Submitted"} · {humanize(current.reviewStatus)}</StatusMark>}<ReportDetails report={current} /><Attachments context={{ parentKind: "meetupReport", parentId: current.id, groupId: group.id }} files={files} readOnly />{current.kind === "meetup" && current.submissionState === "submitted" && current.isUseGC ? <div className="form-actions"><Button onClick={() => onExpense(current)}>Open expense report</Button></div> : null}</div>;
   return <form className="form-stack" onSubmit={submit}>{saved ? <SuccessNotice>{saved}</SuccessNotice> : null}<p className="form-hint">Fields marked * are required.</p><FieldGroup>
     {kind === "week1" ? <><TextField label="How did you support your mentees this week? What question from your mentees impressed you the most?" value={question} onChange={setQuestion} multiline required maxLength={5000} disabled={busy} /><TextField label="Is there anything you would like to flag based on your experience this week?" value={flag} onChange={setFlag} multiline maxLength={5000} disabled={busy} description="Optional" /></> : null}
-    {kind === "meetup" ? <><TextField label="What did you do?" value={title} onChange={setTitle} required maxLength={200} disabled={busy} /><TextField label="Other collaborating groups" value={otherGroup} onChange={setOtherGroup} maxLength={200} disabled={busy} description="Optional — list any groups that joined you." /><div className="form-grid"><TextField label="Meet-up date" value={date} onChange={setDate} type="date" required disabled={busy} /><TextField label="Total attendance" value={attendance} onChange={setAttendance} type="number" min="0" max="500" step="1" required disabled={busy} description="Count yourself and your mentees only." /></div><TextField label="How was your meet-up? Where was it located?" value={description} onChange={setDescription} multiline required maxLength={10000} disabled={busy} /><Attachments context={{ parentKind: "meetupReport", groupId: group.id, ...(current ? { parentId: current.id, version } : {}) }} files={files} onChange={setFiles} onVersion={setVersion} onBusy={setUploading} photoOnly disabled={mutation.pending} label="Group photo *" /><p className="form-hint">Upload a photo only when the mentors and mentees pictured have agreed to its internal use by the programme.</p><CheckField label="I spent a gift card at this meet-up" checked={giftCard} onChange={setGiftCard} disabled={busy} />{giftCard ? <p className="form-hint">After submitting this report, add your expense amount and tax invoice.</p> : null}<CheckField label="I need special consideration" checked={special} onChange={setSpecial} disabled={busy} />{special ? <TextField label="Special consideration comment" value={specialComment} onChange={setSpecialComment} multiline required maxLength={5000} disabled={busy} /> : null}</> : null}
+    {kind === "meetup" ? <><TextField label="What did you do?" value={title} onChange={setTitle} required maxLength={200} disabled={busy} /><TextField label="Other collaborating groups" value={otherGroup} onChange={setOtherGroup} maxLength={200} disabled={busy} description="Optional — list any groups that joined you." /><div className="form-grid"><TextField label="Meet-up date" value={date} onChange={setDate} type="date" required disabled={busy} /><TextField label="Total attendance" value={attendance} onChange={setAttendance} type="number" min="0" max="500" step="1" required disabled={busy} description="Count yourself and your mentees only." /></div><TextField label="How was your meet-up? Where was it located?" value={description} onChange={setDescription} multiline required maxLength={10000} disabled={busy} /><Attachments context={{ parentKind: "meetupReport", groupId: group.id, ...(current ? { parentId: current.id, version } : {}) }} files={files} onChange={setFiles} onVersion={setVersion} onBusy={setUploading} photoOnly disabled={mutation.pending} label="Group photo *" /><p className="form-hint">Upload a photo only when the mentors and mentees pictured have agreed to its internal use by the programme.</p><CheckField label="I spent a gift card at this meet-up" checked={giftCard} onChange={setGiftCard} disabled={busy} />{giftCard ? <p className="form-hint">After you submit, your expense report will open automatically.</p> : null}<CheckField label="I need special consideration" checked={special} onChange={setSpecial} disabled={busy} />{special ? <TextField label="Special consideration comment" value={specialComment} onChange={setSpecialComment} multiline required maxLength={5000} disabled={busy} /> : null}</> : null}
     {kind === "completion" ? <><TextField label="Please share your key takeaways from your experience." value={takeaways} onChange={setTakeaways} multiline required maxLength={10000} disabled={busy} /><TextField label="What helped your mentees the most throughout the programme?" value={helpful} onChange={setHelpful} multiline required maxLength={5000} disabled={busy} description="For example, answering questions or organising meet-ups." /><CheckField label="I would like to be involved in the programme again" checked={again} onChange={setAgain} disabled={busy} /><TextField label="Is there anything you would like to flag based on your experience in this programme?" value={flag} onChange={setFlag} multiline maxLength={5000} disabled={busy} description="Optional" /></> : null}
     <ErrorNotice error={localError || mutation.error} /></FieldGroup><div className="form-actions">{session?.mode === "demo" ? <Button type="submit" name="action" value="draft" variant="outline" disabled={busy}>Save draft</Button> : null}<Button type="submit" name="action" value="submit" disabled={busy}>{mutation.pending ? "Saving report…" : "Submit report"}</Button></div></form>;
 }
@@ -93,12 +124,14 @@ function ReportDetails({ report }: { report: ReportDto }) {
   const fields = report.kind === "week1" ? [["Support and questions", report.question], ["Additional comments", report.flagComment]] : report.kind === "completion" ? [["Key takeaways", report.keyTakeaways], ["What helped most", report.mostHelpful], ["Interested in joining again", report.isJointAgain ? "Yes" : "No"], ["Additional comments", report.flagComment]] : [["Activity", report.title], ["Meet-up date", dateLabel(report.meetupDate)], ["Attendance", String(report.attendance ?? "—")], ["Description and location", report.description], ["Collaborating groups", report.otherGroup], ["Gift card used", report.isUseGC ? "Yes" : "No"], ["Special consideration", report.isRequiredSC ? report.scComment || "Requested" : "Not requested"]];
   return <dl className="record-details">{fields.filter(([, value]) => value).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
-function ExpenseSection({ group, report }: { group: GroupDto; report: ReportDto }) {
+function ExpenseSection({ group, report, onSaved }: { group: GroupDto; report: ReportDto; onSaved: () => void }) {
   const load = useCallback(() => mentorRequest("groups.get", { groupId: group.id }), [group.id]); const resource = useResource(load);
+  const [submitted, setSubmitted] = useState(false);
   if (resource.loading) return <LoadingState label="Loading expenses…" />;
   if (resource.error) return <ErrorNotice error={resource.error} retry={resource.reload} />;
   const expenses = resource.data?.expenses.filter(expense => expense.meetupReportId === report.id) || [];
-  return <section className="form-section"><h3>Meet-up expense</h3>{expenses.length ? expenses.map(expense => <ExpenseDetails key={expense.id} expense={expense} />) : <ExpenseForm group={group} report={report} saved={resource.reload} />}</section>;
+  async function saved() { await resource.reload(); setSubmitted(true); onSaved(); }
+  return <section className="form-stack" aria-label="Expense details">{submitted ? <SuccessNotice>Your expense report has been submitted.</SuccessNotice> : null}{expenses.length ? expenses.map(expense => <ExpenseDetails key={expense.id} expense={expense} />) : <><p className="form-hint">Enter your expense amount and upload the tax invoice for this meet-up.</p><ExpenseForm group={group} report={report} saved={saved} /></>}</section>;
 }
 function ExpenseDetails({ expense }: { expense: ExpenseDto }) { return <div className="form-stack"><dl className="record-details"><div><dt>Amount paid</dt><dd>{new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(expense.amount)}</dd></div><div><dt>Receipt status</dt><dd>{humanize(expense.reviewStatus)} · {humanize(expense.processingStatus)}</dd></div></dl><Attachments context={{ parentKind: "expense", parentId: expense.id, groupId: expense.groupId }} files={expense.attachments} readOnly label="Tax invoice" /></div>; }
 function ExpenseForm({ group, report, saved }: { group: GroupDto; report: ReportDto; saved: () => Promise<void> }) {

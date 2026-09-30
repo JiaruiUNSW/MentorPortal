@@ -76,6 +76,12 @@ function GroupDetail({ groupId, onReport }: { groupId: string; onReport: (select
   return <section className="group-detail" aria-label={`${group.title} details`}>
     <div className="group-detail-header"><h2>{group.title}</h2><p>{group.type} · {group.roundId}</p></div>
     <ErrorNotice error={resource.error} retry={resource.reload} />
+    <dl className="group-information" aria-label="Group information">
+      <div><dt>Start date</dt><dd>{group.startDate ? dateLabel(group.startDate) : "Not provided"}</dd></div>
+      <div><dt>MPL</dt><dd>{group.mplName.trim() || "Not assigned"}<span className="group-contact-email">{group.mplCommunicationEmail.trim() || "Email not provided"}</span></dd></div>
+      <div><dt>Group format</dt><dd>{group.mode.trim() || "Not provided"}</dd></div>
+      <div><dt>Status</dt><dd>{group.groupStatus === 0 ? "Upcoming" : group.groupStatus === 1 ? "Active" : group.groupStatus === 2 ? "Completed" : "Not confirmed"}</dd></div>
+    </dl>
     <div className="group-detail-columns">
       <section className="workspace-panel attendance-panel" aria-labelledby="attendance-heading">
         <div className="panel-header attendance-toolbar">
