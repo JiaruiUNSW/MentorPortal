@@ -1,6 +1,6 @@
 import type { Operation, OperationPayloads, OperationResults } from "@/lib/contracts";
 import type { Principal } from "@/lib/runtime";
-export type Session = { user: Principal | null; mode: "demo" | "live"; csrfToken: string };
+export type Session = { user: Principal | null; mode: "demo" | "live"; csrfToken: string; readOnly?: boolean };
 let csrfToken = "";
 export class PortalError extends Error {
   constructor(message: string, public code = "REQUEST_FAILED", public requestId?: string) { super(message); this.name = "PortalError"; }

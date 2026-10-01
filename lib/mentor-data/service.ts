@@ -3,7 +3,7 @@ import type { PortalBindings, Principal } from '../runtime';
 import { callFlow, configuredEndpoint } from '../flow-bridge';
 import { readDemo, validateFileParent, writeDemo } from './demo';
 import { claimRequest, completeDemo, completeLive, loadDemo, recordFailure, recordUpstreamPending, type Claim } from './store';
-import { isWrite, requireMentor } from './validation';
+import { isWrite, requireLiveWriteAccess, requireMentor } from './validation';
 import { fail, MentorError, safeError } from './errors';
 import { authorizeLiveParent, bytesAsUpload, fileDto, ownFile, ownFiles, projectLiveAttachments, removeObject, stageUpload, validateDemoFile, type FileRow } from './files';
 
@@ -125,6 +125,7 @@ async function reauthorizeLiveReplay(bindings:PortalBindings,principal:Principal
 }
 export async function executeMentor(bindings:PortalBindings,principal:Principal,request:ClientRequest,requestId=crypto.randomUUID()):Promise<BridgeResponse> {
   const mode=bindings.PORTAL_MODE==='demo'?'demo':'live'; requireMentor(principal,mode);
+  requireLiveWriteAccess(bindings,request.operation);
   if(request.operation==='attachments.download') return fileDownload(bindings,principal,request,requestId);
   if(!isWrite(request.operation)) {
     if(mode==='live') { const response=await callFlow(bindings,principal,request,requestId); return response.ok ? {...response,data:await projectLiveAttachments(bindings,principal,response.data,requestId)} as BridgeResponse:response; }

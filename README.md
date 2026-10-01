@@ -35,6 +35,8 @@ First administrator setup requires a random `SETUP_TOKEN` of at least 32 charact
 
 Live server configuration: `MENTOR_BRIDGE_KEY` plus `MENTOR_READ_URL`, `MENTOR_ATTENDANCE_URL`, `MENTOR_REPORT_URL`, `MENTOR_EXPENSE_URL`, `MENTOR_ATTACHMENT_URL`, `MENTOR_PROFILE_URL`, `MENTOR_REDEEM_URL`, `MENTOR_TICKET_URL`. Each adapter revalidates active Mentor access and record ownership. Never place these values in browser code or the hosting manifest.
 
+Live access is read-only by default. `MENTOR_LIVE_WRITES_ENABLED=true` is a separate, explicit server opt-in after write-path validation; missing or any other value rejects all live mutations before idempotency claims, file staging or dispatch. Session responses expose only the non-secret `readOnly` capability, and mutation controls reflect it. This gate does not affect demo saves or account administration. Reads still maintain session, rate-limit, audit and attachment-handle metadata in D1.
+
 ## Publishing
 
 Reuse the Site project ID and logical bindings in `.openai/hosting.json`. The main task owns registration, runtime secrets, source publishing and deployment. Keep this initial Site owner-private until visitor sharing and live-data activation have been reviewed. Signed URLs and original exported packages remain outside public assets and source control.

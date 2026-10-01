@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Operation, OperationPayloads, OperationResults } from "@/lib/contracts";
 import { mentorRequest } from "./api";
+import { useMentorReadOnly } from "./session";
 export function useResource<T>(load: () => Promise<T>, revision: unknown = 0) {
   const [state, setState] = useState<{ data: T | null; error: Error | null; pending: boolean; loader: () => Promise<T>; revision: unknown }>({ data: null, error: null, pending: true, loader: load, revision });
   const request = useRef(0);
@@ -17,9 +18,11 @@ export function useResource<T>(load: () => Promise<T>, revision: unknown = 0) {
 }
 const uncertainKeys = new Map<string, string>();
 export function useMutation() {
+  const readOnly = useMentorReadOnly();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   async function run<O extends Operation>(operation: O, payload: OperationPayloads[O]): Promise<OperationResults[O] | null> {
+    if (readOnly) { setError(new Error('This portal is currently read-only. Changes are not enabled yet.')); return null; }
     setPending(true); setError(null);
     try {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([operation, payload])));
@@ -30,7 +33,7 @@ export function useMutation() {
     catch (e) { setError(e instanceof Error ? e : new Error("The change was not saved. Please try again.")); return null; }
     finally { setPending(false); }
   }
-  return { run, pending, error, clearError: () => setError(null) };
+  return { run, pending, readOnly, error, clearError: () => setError(null) };
 }
 
 export function usePagedResource<T extends { id: string }>(load: (cursor?: string) => Promise<{ items: T[]; nextCursor: string | null }>, revision: unknown = 0) {

@@ -31,7 +31,7 @@ before(async () => {
           const path = '/' + url.pathname.split('/').slice(2).join('/');
           const now = request.headers.get('x-test-now');
           const appOrigin = url.hostname === 'localhost' || url.hostname === '127.0.0.1' ? url.origin : '${ORIGIN}';
-          const service = new AuthService(env.DB, {mode, appOrigin, setupToken:env.SETUP_TOKEN, now:now ? () => Number(now) : undefined});
+          const service = new AuthService(env.DB, {mode, appOrigin, setupToken:env.SETUP_TOKEN, liveWritesEnabled:request.headers.get('x-test-writes')==='true', now:now ? () => Number(now) : undefined});
           try {
             if (path === '/test/password') {
               const body = await request.json();
@@ -71,6 +71,7 @@ interface AuthBody {
   user?: { accountId: string; email: string; displayName: string; mentorUserId: number; role: string; mode: string } | null;
   mode?: string;
   csrfToken?: string;
+  readOnly?: boolean;
   error?: { code: string; message: string };
   invite?: { inviteId: string; expiresAt: number };
   activationUrl?: string;
@@ -321,6 +322,15 @@ test("loopback HTTP uses separate development cookies and insecure public origin
   assert.ok(login.headers.getSetCookie().some((cookie) => cookie.startsWith("mentor_session_dev=")));
   const insecure = await runtime.dispatchFetch("http://portal.test/demo/api/auth/session");
   assert.equal(insecure.status, 503);
+});
+
+test("session capabilities default live to read-only while demo stays writable", async () => {
+  const live=await runtime.dispatchFetch(`${ORIGIN}/live/api/auth/session`);
+  assert.equal(live.status,401);assert.equal((await live.json() as AuthBody).readOnly,true);
+  const demo=await runtime.dispatchFetch(`${ORIGIN}/demo/api/auth/session`);
+  assert.equal((await demo.json() as AuthBody).readOnly,false);
+  const enabled=await runtime.dispatchFetch(`${ORIGIN}/live/api/auth/session`,{headers:{'x-test-writes':'true'}});
+  assert.equal((await enabled.json() as AuthBody).readOnly,false);
 });
 
 test("concurrent bootstrap requests cannot create a second administrator", async () => {

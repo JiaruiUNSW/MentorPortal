@@ -6,7 +6,7 @@ export { AuthError };
 
 function service(): AuthService {
   const bindings = getBindings();
-  return new AuthService(getRawDb(), { mode: getPortalMode(), appOrigin: bindings.APP_ORIGIN, setupToken: bindings.SETUP_TOKEN });
+  return new AuthService(getRawDb(), { mode: getPortalMode(), appOrigin: bindings.APP_ORIGIN, setupToken: bindings.SETUP_TOKEN, liveWritesEnabled: bindings.MENTOR_LIVE_WRITES_ENABLED === 'true' });
 }
 
 export function requireSession(request: Request): Promise<Principal> {

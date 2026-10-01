@@ -18,3 +18,4 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   return <SessionContext.Provider value={{ session, loading, error, refresh, accept: setSession, logout }}>{children}</SessionContext.Provider>;
 }
 export function useSession() { const context = useContext(SessionContext); if (!context) throw new Error("SessionProvider is required."); return context; }
+export function useMentorReadOnly() { const { session } = useSession(); return session?.mode === 'live' && session.readOnly !== false; }

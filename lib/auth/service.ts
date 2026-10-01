@@ -36,6 +36,7 @@ interface ServiceOptions {
   mode: Mode;
   appOrigin?: string;
   setupToken?: string;
+  liveWritesEnabled?: boolean;
   now?: () => number;
 }
 type SessionContext = { principal: Principal; token: string; tokenHash: string };
@@ -51,6 +52,7 @@ function principalFromRow(row: AccountRow): Principal {
 export class AuthService {
   private readonly db: D1Database;
   readonly mode: Mode;
+  readonly readOnly: boolean;
   private readonly appOrigin?: string;
   private readonly setupToken?: string;
   private readonly clock: () => number;
@@ -58,6 +60,7 @@ export class AuthService {
   constructor(db: D1Database, options: ServiceOptions) {
     this.db = db;
     this.mode = options.mode;
+    this.readOnly = options.mode === 'live' && options.liveWritesEnabled !== true;
     this.appOrigin = options.appOrigin;
     this.setupToken = options.setupToken;
     this.clock = options.now ?? Date.now;
@@ -108,9 +111,9 @@ export class AuthService {
   async session(request: Request): Promise<Response> {
     applicationOrigin(request, this.appOrigin);
     const context = await this.sessionContext(request);
-    if (context) return this.json({ user: context.principal, mode: this.mode, csrfToken: await csrfForToken(context.token) });
+    if (context) return this.json({ user: context.principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(context.token) });
     const token = getCookie(request, cookieNames(request).csrf) ?? randomToken();
-    return this.json({ user: null, mode: this.mode, csrfToken: await csrfForToken(token), error: { code: "UNAUTHENTICATED", message: "Please sign in to continue." } }, 401, [setCookie(request, "csrf", token, 3600), setCookie(request, "session", "", 0)]);
+    return this.json({ user: null, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(token), error: { code: "UNAUTHENTICATED", message: "Please sign in to continue." } }, 401, [setCookie(request, "csrf", token, 3600), setCookie(request, "session", "", 0)]);
   }
 
   private async rateLimit(request: Request, action: string, limit: number, windowSeconds: number, email?: string): Promise<void> {
@@ -138,7 +141,7 @@ export class AuthService {
     statements.push(this.db.prepare(`DELETE FROM auth_sessions WHERE token_hash IN (SELECT token_hash FROM auth_sessions WHERE expires_at < ? LIMIT 100)`).bind(now - 24 * 3600 * 1000));
     const results = await this.db.batch(statements);
     if (results[0].meta.changes !== 1) throw UNAUTHENTICATED();
-    return this.json({ user: principal, mode: this.mode, csrfToken: await csrfForToken(token) }, status, [setCookie(request, "session", token, maxAge), setCookie(request, "csrf", "", 0)]);
+    return this.json({ user: principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(token) }, status, [setCookie(request, "session", token, maxAge), setCookie(request, "csrf", "", 0)]);
   }
 
   async login(request: Request): Promise<Response> {
@@ -159,7 +162,7 @@ export class AuthService {
     await this.requireMutationProtection(request);
     await readAuthJson(request, []);
     const current = await this.sessionContext(request);
-    if (current?.principal.role === "mentor") return this.json({ user: current.principal, mode: this.mode, csrfToken: await csrfForToken(current.token) });
+    if (current?.principal.role === "mentor") return this.json({ user: current.principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(current.token) });
     await this.rateLimit(request, "demo", 20, 3600);
     const accountId = crypto.randomUUID();
     const principal: Principal = { accountId, email: `preview.${accountId}@example.invalid`, displayName: "Alex Morgan", mentorUserId: 1, role: "mentor", mode: "demo" };
@@ -173,7 +176,7 @@ export class AuthService {
     const token = getCookie(request, cookieNames(request).session);
     if (token) await this.db.prepare(`UPDATE auth_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL`).bind(this.clock(), await hashToken(token)).run();
     const csrf = randomToken();
-    return this.json({ user: null, mode: this.mode, csrfToken: await csrfForToken(csrf) }, 200, [setCookie(request, "session", "", 0), setCookie(request, "csrf", csrf, 3600)]);
+    return this.json({ user: null, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(csrf) }, 200, [setCookie(request, "session", "", 0), setCookie(request, "csrf", csrf, 3600)]);
   }
 
   async setup(request: Request): Promise<Response> {

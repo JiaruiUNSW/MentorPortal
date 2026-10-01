@@ -22,7 +22,8 @@ before(async()=>{
     export default {async fetch(request,env){
       const [_,mode,account,action]=new URL(request.url).pathname.split('/');
       const principal={accountId:account,email:account+'@example.test',displayName:'Preview Mentor '+account,mentorUserId:request.headers.get('x-admin')?0:1,role:request.headers.get('x-admin')?'admin':'mentor',mode};
-      const bindings={...env,PORTAL_MODE:mode};
+      const bindings={...env,PORTAL_MODE:mode,MENTOR_LIVE_WRITES_ENABLED:action.startsWith('mock-')||action==='bridge'?'true':undefined};
+      let flowCalls=0;
       const requestId=crypto.randomUUID();
       const nativeFetch=globalThis.fetch;
       try {
@@ -32,13 +33,16 @@ before(async()=>{
           if(value.operation==='attachments.download' && parseUpload(data,255).byteLength!==data.sizeBytes)throw new Error('Generated download fixture size mismatch');
           return Response.json({data:await projectLiveAttachments(bindings,{...principal,mode:'live'},data,requestId)});
         }
-        if(action.startsWith('mock-')) {
+        if(action.startsWith('mock-') || action.startsWith('read-only')) {
           Object.assign(bindings,{MENTOR_BRIDGE_KEY:'test-only-bridge-key-with-at-least-32-characters',MENTOR_READ_URL:'https://test.logic.azure.com/read',MENTOR_TICKET_URL:'https://test.logic.azure.com/ticket',MENTOR_ATTACHMENT_URL:'https://test.logic.azure.com/file'});
+          for(const key of ['MENTOR_ATTENDANCE_URL','MENTOR_REPORT_URL','MENTOR_EXPENSE_URL','MENTOR_PROFILE_URL','MENTOR_REDEEM_URL'])bindings[key]='https://test.logic.azure.com/write';
           globalThis.fetch=async(url,init)=>{
+            flowCalls++;
             const sent=JSON.parse(init.body),p=sent.payload,base={schemaVersion:'1.0',requestId:sent.requestId};
             if(action==='mock-transport')throw new Error('private upstream transport details');
             if(action==='mock-deny' && ['tickets.get','reports.get','groups.get'].includes(sent.operation))return Response.json({...base,ok:false,error:{code:'OWNERSHIP_DENIED',message:'Private upstream text',retryable:false}},{status:403});
             const ticket={id:77,version:'1',title:'Live fixture ticket',description:'Mock adapter test only',status:'Open',staffName:'',staffComment:'',createdAt:'2026-09-30T00:00:00Z',modifiedAt:'2026-09-30T00:00:00Z',attachments:[]};
+            if(sent.operation==='balance.get')return Response.json({...base,ok:true,data:{balance:5,totalCredit:10,roundCount:1,milestone:20,milestoneRound:3}});
             if(sent.operation==='tickets.create') {
               const count=liveWriteCounts.get(account)||0;liveWriteCounts.set(account,count+1);
               if(action==='mock-pending' && count===0)return Response.json({...base,ok:false,error:{code:'REQUEST_IN_PROGRESS',message:'Still processing',retryable:true}},{status:409});
@@ -49,10 +53,10 @@ before(async()=>{
             return Response.json({...base,ok:true,data:{profile:{id:1,version:'1',displayName:'Live fixture',preferredName:'Live',communicationEmail:'live@example.test',country:'Australia',phoneNumber:'+61 400 000 000',communicationChannels:[],programs:[],stream:'',otherStream:'',wwcc:'',wwccExpiryDate:null,dateOfBirth:null},choices:{communicationChannels:[],programs:[],streams:[]}}});
           };
         }
-        if(action==='bridge'){
+        if(action==='bridge' || action==='read-only-bridge'){
           let calls=0,captured; const req=parseClientRequest(value.request);
           const result=await callFlow({...bindings,PORTAL_MODE:value.demo?'demo':'live',MENTOR_BRIDGE_KEY:'test-only-bridge-key-with-at-least-32-characters',MENTOR_READ_URL:'https://test.logic.azure.com/workflow',MENTOR_TICKET_URL:'https://test.logic.azure.com/workflow',MENTOR_ATTACHMENT_URL:'https://test.logic.azure.com/workflow'}, {...principal,mode:'live'},req,requestId,value.resolved,async(url,init)=>{
-            calls++;captured={body:JSON.parse(init.body),headers:init.headers};
+            calls++;flowCalls++;captured={body:JSON.parse(init.body),headers:init.headers};
             if(value.transportFailure)throw new Error('secret URL or backend error');
             return Response.json({schemaVersion:'1.0',requestId,ok:true,data:value.response});
           });
@@ -64,7 +68,7 @@ before(async()=>{
         if(action==='claim'){const c=await claimRequest(env.DB,principal,parsed,requestId);return Response.json({requestId:c.row.request_id});}
         if(action==='file'){const f=await ownFile(env.DB,principal,value.payload.attachmentId);validateDemoFile((await loadDemo(env.DB,principal)).state,f);const o=await env.BUCKET.get(f.object_key);return new Response(o.body);}
         const result=await executeMentor(bindings,principal,parsed,requestId);return Response.json(result);
-      }catch(error){const safe=safeError(error);return Response.json(errorEnvelope(requestId,safe),{status:safe.status});}finally{globalThis.fetch=nativeFetch;}
+      }catch(error){const safe=safeError(error);return Response.json({...errorEnvelope(requestId,safe),...(action.startsWith('read-only')?{flowCalls}:{})},{status:safe.status});}finally{globalThis.fetch=nativeFetch;}
     }};`,resolveDir:process.cwd(),loader:'ts',sourcefile:'mentor-test-worker.ts'},bundle:true,write:false,format:'esm',platform:'browser',target:'es2022'});
   runtime=new Miniflare({modules:true,script:bundle.outputFiles[0].text,compatibilityDate:'2026-05-22',d1Databases:['DB'],r2Buckets:['BUCKET']});
   database=await runtime.getD1Database('DB');
@@ -184,6 +188,36 @@ test('demo/live isolation, unconfigured live endpoints and admin denial fail clo
   const response=await runtime.dispatchFetch('https://test.invalid/demo/admin/run',{method:'POST',headers:{'x-admin':'1'},body:JSON.stringify({operation:'bootstrap',payload:{}})});assert.equal(response.status,403);
   const bridge=await runtime.dispatchFetch('https://test.invalid/live/a/bridge',{method:'POST',body:JSON.stringify({demo:true,request:{operation:'balance.get',payload:{}},response:{}})});assert.equal(bridge.status,403);
   const count=await database.prepare('SELECT count(*) AS n FROM mentor_demo_state').first<{n:number}>();assert.equal(count?.n,0);
+});
+
+test('live read-only mode blocks every mutation before claims, file staging or outbound requests',async()=>{
+  const writes:Array<[Operation,unknown]>=[
+    ['attendance.save',{groupId:'42',expectedVersion:'1',entries:[{menteeId:'3',attended:true,expectedVersion:'1'}]}],
+    ['reports.week1.save',{groupId:'42',question:'Test only'}],
+    ['reports.meetup.save',{groupId:'42',title:'Test only',meetupDate:'2026-09-30',attendance:2,description:'Test only',isUseGC:false,isRequiredSC:false}],
+    ['reports.completion.save',{groupId:'42',keyTakeaways:'Test',mostHelpful:'Test',isJointAgain:true}],
+    ['expenses.save',{groupId:'42',meetupReportId:'7',amount:10,attachmentIds:['file_1']}],
+    ['attachments.upload',{parentKind:'ticket',file:png}],
+    ['attachments.delete',{parentKind:'ticket',parentId:'77',expectedVersion:'1',attachmentId:'file_1'}],
+    ['profile.update',{expectedVersion:'1',country:'Australia',phoneNumber:'0400000000',communicationChannels:[],programs:[],stream:'',otherStream:'',under18:false,wwcc:'WWC1234567E',wwccExpiryDate:'2029-01-01'}],
+    ['redemptions.create',{rewardId:'8',optionIds:[],comment:'Test only'}],
+    ['tickets.create',{title:'Test only',description:'Test only'}],
+    ['tickets.update',{ticketId:'77',expectedVersion:'1',title:'Test only',description:'Test only'}],
+  ];
+  for(const [operation,payload] of writes){
+    const result=await request('readonly',operation,payload,uuid(),'live','read-only');
+    assert.equal(result.status,503,operation);
+    assert.equal(result.body.error?.code,'DRAFT_NOT_CONFIGURED',operation);
+    assert.equal((result.body as unknown as {flowCalls:number}).flowCalls,0,operation);
+  }
+  const direct=await runtime.dispatchFetch('https://test.invalid/live/readonly/read-only-bridge',{method:'POST',body:JSON.stringify({request:{operation:'tickets.create',payload:{title:'Test',description:'Test'},idempotencyKey:uuid()}})});
+  const rejected=await direct.json() as {error:{code:string};flowCalls:number};
+  assert.equal(direct.status,503);assert.equal(rejected.error.code,'DRAFT_NOT_CONFIGURED');assert.equal(rejected.flowCalls,0);
+  for(const table of ['mentor_requests','mentor_files','mentor_audit'])assert.equal((await database.prepare(`SELECT count(*) AS n FROM ${table}`).first<{n:number}>())?.n,0,table);
+  assert.equal((await (await runtime.getR2Bucket('BUCKET')).list({prefix:'live/readonly/'})).objects.length,0);
+  const read=await request('readonly','balance.get',{},undefined,'live','read-only');
+  assert.equal(read.status,200);assert.equal(read.body.data.balance,5);
+  assert.equal((await database.prepare("SELECT count(*) AS n FROM mentor_audit WHERE outcome='live_dispatch'").first<{n:number}>())?.n,1);
 });
 
 test('live bridge strictly normalizes numeric IDs, drops response extras, and never leaks transport secrets',async()=>{

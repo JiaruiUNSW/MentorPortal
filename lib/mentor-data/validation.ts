@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ClientRequest, Operation } from '../contracts';
-import type { Principal } from '../runtime';
+import type { PortalBindings, Principal } from '../runtime';
 import { fail } from './errors';
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -49,6 +49,11 @@ export const payloadSchemas = {
 
 export function isWrite(operation: Operation): boolean {
   return !['bootstrap', 'groups.list', 'groups.get', 'reports.list', 'reports.get', 'balance.get', 'transactions.list', 'rewards.list', 'rewards.get', 'profile.get', 'tickets.list', 'tickets.get', 'redemptions.list', 'attachments.download'].includes(operation);
+}
+export function requireLiveWriteAccess(bindings: PortalBindings, operation: Operation): void {
+  if (bindings.PORTAL_MODE !== 'demo' && isWrite(operation) && bindings.MENTOR_LIVE_WRITES_ENABLED !== 'true') {
+    fail('DRAFT_NOT_CONFIGURED', 'The portal is read-only while its data connection is being verified. Changes are not enabled yet.', 503, false);
+  }
 }
 export function parseClientRequest(input: unknown): ClientRequest {
   const top = z.object({ operation: z.string(), payload: z.unknown(), idempotencyKey: z.string().uuid().optional() }).strict().safeParse(input);

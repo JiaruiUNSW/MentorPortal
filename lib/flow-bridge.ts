@@ -1,7 +1,7 @@
 import type { BridgeResponse, ClientRequest, ErrorCode, Operation } from './contracts';
 import type { PortalBindings, Principal } from './runtime';
 import { MentorError, fail } from './mentor-data/errors';
-import { isWrite, parseForwardedUpload, requireMentor } from './mentor-data/validation';
+import { isWrite, parseForwardedUpload, requireLiveWriteAccess, requireMentor } from './mentor-data/validation';
 import { validateFlowData } from './mentor-data/response-validation';
 import { canonicalJson, sha256 } from './mentor-data/store';
 
@@ -62,6 +62,7 @@ export async function callFlow(bindings: PortalBindings, principal: Principal, r
   // This guard is independent of routing. Demo data can never be forwarded accidentally.
   if (bindings.PORTAL_MODE === 'demo') fail('MENTOR_FORBIDDEN','Preview requests cannot use the live data bridge.',403);
   requireMentor(principal,'live');
+  requireLiveWriteAccess(bindings,request.operation);
   const endpoint = configuredEndpoint(bindings,request.operation), payload = normalizeLivePayload(request,resolvedPayload);
   const now = Date.now();
   const rate = await bindings.DB.prepare("INSERT INTO mentor_audit (id,account_id,mode,request_id,operation,outcome,created_at) SELECT ?,?,'live',?,?,'live_dispatch',? WHERE (SELECT COUNT(*) FROM mentor_audit WHERE account_id=? AND mode='live' AND outcome='live_dispatch' AND created_at>?)<60").bind(crypto.randomUUID(),principal.accountId,requestId,request.operation,now,principal.accountId,now-60000).run();
