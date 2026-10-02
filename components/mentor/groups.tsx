@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { mentorRequest } from "./api";
 import { useMutation, usePagedResource, useResource } from "./hooks";
+import { resolveGroupSelection, type GroupSelection } from "./group-directory";
 import { dateLabel, EmptyState, ErrorNotice, LoadingState, PageHeader, StatusMark } from "./ui";
 
 export const reportLabels = { week1: "Week 1", meetup: "Meet-up", completion: "Completion" } as const;
@@ -34,24 +35,27 @@ export function reportState(report?: ReportDto, task?: TaskDto) {
   };
 }
 
-export function GroupsView({ groups, onReport, revision = 0 }: { groups: GroupDto[]; onReport: (selection: ReportSelection) => void; revision?: number }) {
-  const rounds = [...new Set(groups.map(group => group.roundId))];
-  const [round, setRound] = useState(rounds[0] || "");
-  const [selected, setSelected] = useState(groups[0]?.id || "");
-  const visible = groups.filter(group => group.roundId === round);
-  const group = visible.find(item => item.id === selected) || visible[0];
+export function GroupsView({ groups, selection, onSelectionChange, preferredGroupId, onReport, revision = 0 }: {
+  groups: GroupDto[];
+  selection: GroupSelection;
+  onSelectionChange: (selection: GroupSelection) => void;
+  preferredGroupId?: string;
+  onReport: (selection: ReportSelection) => void;
+  revision?: number;
+}) {
+  const { rounds, round, visible, group } = resolveGroupSelection(groups, selection, preferredGroupId);
 
   return <>
     <PageHeader title="My Groups" description="Your groups, sessions and reports.">
       <Field className="round-select">
-        <FieldLabel htmlFor="current-round">Current round</FieldLabel>
-        <NativeSelect id="current-round" value={round} onChange={event => setRound(event.target.value)} disabled={!rounds.length}>
+        <FieldLabel htmlFor="current-round">Round</FieldLabel>
+        <NativeSelect id="current-round" value={round} onChange={event => onSelectionChange({ round: event.target.value, groupId: groups.find(item => item.roundId === event.target.value)?.id || "" })} disabled={!rounds.length}>
           {rounds.map(item => <NativeSelectOption key={item} value={item}>{item}</NativeSelectOption>)}
         </NativeSelect>
       </Field>
     </PageHeader>
     {!groups.length ? <EmptyState title="No groups assigned">Your assigned groups will appear here when they are ready.</EmptyState> : <>
-      <ToggleGroup type="single" value={group?.id || ""} onValueChange={value => { if (value) setSelected(value); }} aria-label="Assigned groups" className="group-switcher" style={{ gridTemplateColumns: `repeat(${Math.min(visible.length, 3) || 1}, minmax(0, 1fr))` }}>
+      <ToggleGroup type="single" value={group?.id || ""} onValueChange={value => { if (value) onSelectionChange({ round, groupId: value }); }} aria-label="Assigned groups" className="group-switcher" style={{ gridTemplateColumns: `repeat(${Math.min(visible.length, 3) || 1}, minmax(0, 1fr))` }}>
         {visible.map(item => <ToggleGroupItem key={item.id} value={item.id} aria-label={`Show ${item.title}`} className="group-choice">
           <UsersRound aria-hidden="true" strokeWidth={1.8} />
           <span className="group-choice-copy"><strong>{item.title.replace(/^Group\s+/i, "")}</strong><span><span>{item.type}</span><span className="group-choice-separator"> · </span><span>{item.menteeCount} mentees</span></span></span>
