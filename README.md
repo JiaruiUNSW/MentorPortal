@@ -37,6 +37,8 @@ Live server configuration: `MENTOR_BRIDGE_KEY` plus `MENTOR_READ_URL`, `MENTOR_A
 
 Live access is read-only by default. `MENTOR_LIVE_WRITES_ENABLED=true` is a separate, explicit server opt-in after write-path validation; missing or any other value rejects all live mutations before idempotency claims, file staging or dispatch. Session responses expose only the non-secret `readOnly` capability, and mutation controls reflect it. This gate does not affect demo saves or account administration. Reads still maintain session, rate-limit, audit and attachment-handle metadata in D1.
 
+Live Flow reads allow 45 seconds for a response; writes retain their 20-second uncertainty boundary. This accommodates the 14.8–19.9 second owner balance reads measured on 2 October 2026. Increasing the deadline prevents premature failures; it does not make the upstream Flow faster. The first connection remains limited to verified source User.ID 1, with the hosted site in demo mode until live accounts and page-level integration are verified.
+
 ## Publishing
 
 Reuse the Site project ID and logical bindings in `.openai/hosting.json`. The main task owns registration, runtime secrets, source publishing and deployment. Keep this initial Site owner-private until visitor sharing and live-data activation have been reviewed. Signed URLs and original exported packages remain outside public assets and source control.

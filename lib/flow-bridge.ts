@@ -81,7 +81,7 @@ export async function callFlow(bindings: PortalBindings, principal: Principal, r
       headers['X-Mentor-Files-Validated-SHA256'] = digest;
     }
   }
-  const controller = new AbortController(); const deadline = setTimeout(()=>controller.abort(), isWrite(request.operation) ? 20000:12000);
+  const controller = new AbortController(); const deadline = setTimeout(()=>controller.abort(), isWrite(request.operation) ? 20000:45000);
   let response: Response;
   try {
     response = await fetcher(endpoint,{method:'POST',headers,body:JSON.stringify(envelope),redirect:'error',signal:controller.signal});

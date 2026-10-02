@@ -57,6 +57,12 @@ before(async()=>{
           let calls=0,captured; const req=parseClientRequest(value.request);
           const result=await callFlow({...bindings,PORTAL_MODE:value.demo?'demo':'live',MENTOR_BRIDGE_KEY:'test-only-bridge-key-with-at-least-32-characters',MENTOR_READ_URL:'https://test.logic.azure.com/workflow',MENTOR_TICKET_URL:'https://test.logic.azure.com/workflow',MENTOR_ATTACHMENT_URL:'https://test.logic.azure.com/workflow'}, {...principal,mode:'live'},req,requestId,value.resolved,async(url,init)=>{
             calls++;flowCalls++;captured={body:JSON.parse(init.body),headers:init.headers};
+            if(value.responseDelayMs)await new Promise((resolve,reject)=>{
+              const cancel=()=>{clearTimeout(timer);reject(new DOMException('Aborted','AbortError'));};
+              const timer=setTimeout(()=>{init.signal.removeEventListener('abort',cancel);resolve();},value.responseDelayMs);
+              init.signal.addEventListener('abort',cancel,{once:true});
+              if(init.signal.aborted)cancel();
+            });
             if(value.transportFailure)throw new Error('secret URL or backend error');
             return Response.json({schemaVersion:'1.0',requestId,ok:true,data:value.response});
           });
@@ -228,6 +234,12 @@ test('live bridge strictly normalizes numeric IDs, drops response extras, and ne
   const body=await read.json() as {calls:number;result:{data:Record<string,unknown>;requestId:string};captured:{body:{actor:{userId:number}};headers:Record<string,string>}};assert.equal(read.status,200);assert.equal(body.calls,1);assert.equal(body.result.data.secret,undefined);assert.equal(body.captured.body.actor.userId,1);assert.equal(body.captured.headers['X-Mentor-Request-Id'],body.result.requestId);
   const write=await runtime.dispatchFetch('https://test.invalid/live/a/bridge',{method:'POST',body:JSON.stringify({transportFailure:true,request:{operation:'tickets.create',payload:{title:'Test',description:'A test'},idempotencyKey:uuid()}})});
   const failed=await write.json() as {error:{code:string;retryable:boolean}};assert.equal(failed.error.code,'PARTIAL_WRITE');assert.equal(failed.error.retryable,false);assert.doesNotMatch(JSON.stringify(failed),/secret URL|backend error|server-secret/);
+});
+
+test('live reads tolerate a valid delayed Flow response beyond the former 12-second deadline',async()=>{
+  const response=await runtime.dispatchFetch('https://test.invalid/live/read-budget/bridge',{method:'POST',body:JSON.stringify({responseDelayMs:13000,request:{operation:'balance.get',payload:{}},response:{balance:5,totalCredit:10,roundCount:1,milestone:20,milestoneRound:3}})});
+  const body=await response.json() as {calls:number;result:{ok:boolean;data:{balance:number}}};
+  assert.equal(response.status,200);assert.equal(body.calls,1);assert.equal(body.result.ok,true);assert.equal(body.result.data.balance,5);
 });
 
 test('source-mapped profile updates preserve identity, and Closed tickets reject edits',async()=>{
