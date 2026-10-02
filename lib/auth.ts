@@ -32,5 +32,14 @@ type AuthAction = "session" | "login" | "demo" | "activate" | "logout" | "setup"
 
 export async function handleAuth(request: Request, action: AuthAction): Promise<Response> {
   try { return await service()[action](request); }
-  catch (error) { return authErrorResponse(error); }
+  catch (error) {
+    if (!(error instanceof AuthError)) {
+      // Never log the request, raw exception, password, token or database values.
+      const code = error instanceof Error && /\bD1_ERROR\b/.test(error.message) ? "AUTH_DATABASE_ERROR"
+        : error instanceof Error && error.name === "NotSupportedError" ? "AUTH_RUNTIME_UNSUPPORTED"
+        : "AUTH_UNEXPECTED_ERROR";
+      console.error("mentor_auth_failure", { action, code });
+    }
+    return authErrorResponse(error);
+  }
 }

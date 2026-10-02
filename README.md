@@ -27,6 +27,8 @@ Schemas are `db/auth-schema.ts` and `db/mentor-schema.ts`, re-exported by `db/sc
 
 See `AUTH-CONTRACT.md`. Passwords use salted PBKDF2-SHA256, sessions are persistent and revocable, and all POSTs enforce origin/CSRF. Only the server maps accounts to stable SharePoint Mentor User IDs. Minimal administrators invite/revoke accounts; they cannot impersonate a Mentor through the data API.
 
+Password hashing retains the standard 600,000-round PBKDF2-SHA256 format. If hosted Workers rejects that native call with its explicit iteration-limit error, pinned `@noble/hashes` computes the same standard hash. Other crypto errors remain failures. Tests simulate this production limit because local workerd does not enforce it. Confirm the deployed path with a nonexistent synthetic login and check platform CPU metrics; this probe creates no account and only increments the normal authentication rate-limit counters. Diagnostics log fixed codes and numeric KDF parameters, never credentials or raw exception data.
+
 First administrator setup requires a random `SETUP_TOKEN` of at least 32 characters in runtime secrets. It is unnecessary for ordinary demo exploration. Remove it after bootstrap. No invitation emails are sent automatically; an administrator can copy an activation link. Public visitor access is not enabled by the initial private deployment.
 
 ## Data boundary

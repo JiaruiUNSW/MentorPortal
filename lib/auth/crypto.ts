@@ -1,3 +1,6 @@
+import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+
 const PASSWORD_ITERATIONS = 600_000;
 const encoder = new TextEncoder();
 
@@ -27,9 +30,27 @@ export async function secretEqual(left: string, right: string): Promise<boolean>
 }
 
 async function derivePassword(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const result = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
-  return toBase64Url(new Uint8Array(result));
+  const passwordBytes = encoder.encode(password);
+  try {
+    const key = await crypto.subtle.importKey("raw", passwordBytes, "PBKDF2", false, ["deriveBits"]);
+    try {
+      const result = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
+      return toBase64Url(new Uint8Array(result));
+    } catch (error) {
+      // Hosted Workers can cap native PBKDF2 even when local workerd accepts it.
+      // Preserve the standard 600k-round hash; only this documented limit uses
+      // the compatible implementation. Unrelated crypto errors still fail.
+      const limit = error instanceof Error && error.name === "NotSupportedError"
+        ? /^Pbkdf2 failed: iteration counts above ([1-9]\d*) are not supported \(requested ([1-9]\d*)\)\.$/.exec(error.message)
+        : null;
+      if (!limit || Number(limit[2]) !== iterations || Number(limit[1]) >= iterations) throw error;
+      const result = await pbkdf2Async(sha256, passwordBytes, salt, { c: iterations, dkLen: 32 });
+      try {
+        console.warn("mentor_auth_kdf", { code: "PBKDF2_NATIVE_LIMIT_FALLBACK", iterations, nativeLimit: Number(limit[1]), completed: true });
+        return toBase64Url(result);
+      } finally { result.fill(0); }
+    }
+  } finally { passwordBytes.fill(0); }
 }
 
 export async function hashPassword(password: string): Promise<string> {
