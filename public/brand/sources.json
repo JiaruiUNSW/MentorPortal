@@ -1,0 +1,19 @@
+{
+  "use": "Local brand artwork supplied by the project owner. Original assets preserved unchanged.",
+  "assets": [
+    {
+      "file": "unsw-college-logo.png",
+      "sourceFilename": "UNSW College landscape logo - compact.png",
+      "source": "User-provided local brand assets",
+      "sha256": "e1c173bad35a51f66978d5dcdfe4bfe734c7408094df320d98498cf66ce41f35",
+      "bytes": 196837
+    },
+    {
+      "file": "buddy-program-logo.png",
+      "sourceFilename": "Buddy_Program_Logo_Final_Transparent.png",
+      "source": "User-provided local brand assets",
+      "sha256": "c383bfa1b81a27496342945a5a31538fb68dc81cf04403ffe8ebdd040f7e7ddb",
+      "bytes": 859870
+    }
+  ]
+}

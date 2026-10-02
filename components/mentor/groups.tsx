@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Plus, UsersRound } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { GroupDto, MenteeDto, ReportDto, ReportKind, TaskDto } from "@/lib/contracts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -55,10 +55,9 @@ export function GroupsView({ groups, selection, onSelectionChange, preferredGrou
       </Field>
     </PageHeader>
     {!groups.length ? <EmptyState title="No groups assigned">Your assigned groups will appear here when they are ready.</EmptyState> : <>
-      <ToggleGroup type="single" value={group?.id || ""} onValueChange={value => { if (value) onSelectionChange({ round, groupId: value }); }} aria-label="Assigned groups" className="group-switcher" style={{ gridTemplateColumns: `repeat(${Math.min(visible.length, 3) || 1}, minmax(0, 1fr))` }}>
+      <ToggleGroup type="single" value={group?.id || ""} onValueChange={value => { if (value) onSelectionChange({ round, groupId: value }); }} aria-label="Assigned groups" className="group-switcher">
         {visible.map(item => <ToggleGroupItem key={item.id} value={item.id} aria-label={`Show ${item.title}`} className="group-choice">
-          <UsersRound aria-hidden="true" strokeWidth={1.8} />
-          <span className="group-choice-copy"><strong>{item.title.replace(/^Group\s+/i, "")}</strong><span><span>{item.type}</span><span className="group-choice-separator"> · </span><span>{item.menteeCount} mentees</span></span></span>
+          <span className="group-choice-copy"><strong>{item.title}</strong><span><span>{item.type}</span><span className="group-choice-separator"> · </span><span>{item.menteeCount} mentees</span></span></span>
         </ToggleGroupItem>)}
       </ToggleGroup>
       {group ? <GroupDetail key={`${group.id}-${revision}`} groupId={group.id} onReport={onReport} /> : <EmptyState title="No groups in this round">Choose another round to see your groups.</EmptyState>}
@@ -78,7 +77,7 @@ function GroupDetail({ groupId, onReport }: { groupId: string; onReport: (select
   const meetups = sortMeetups(history.data?.items || []);
 
   return <section className="group-detail" aria-label={`${group.title} details`}>
-    <div className="group-detail-header"><h2>{group.title}</h2><p>{group.type} · {group.roundId}</p></div>
+    <div className="group-detail-header sr-only"><h2>{group.title}</h2><p>{group.type} · {group.roundId}</p></div>
     <ErrorNotice error={resource.error} retry={resource.reload} />
     <dl className="group-information" aria-label="Group information">
       <div><dt>Start date</dt><dd>{group.startDate ? dateLabel(group.startDate) : "Not provided"}</dd></div>
@@ -90,7 +89,7 @@ function GroupDetail({ groupId, onReport }: { groupId: string; onReport: (select
       <section className="workspace-panel attendance-panel" aria-labelledby="attendance-heading">
         <div className="panel-header attendance-toolbar">
           <div><h3 id="attendance-heading">Mentee attendance</h3><p>{group.attendanceUpdatedAt ? `Updated ${dateLabel(group.attendanceUpdatedAt)}` : "Your group’s current attendance"}</p></div>
-          <Button variant="outline" onClick={() => setAttendanceOpen(true)}>Record attendance</Button>
+          <Button variant="outline" size="sm" onClick={() => setAttendanceOpen(true)}>Record attendance</Button>
         </div>
         <div className="panel-table"><Table className="attendance-table">
           <TableHeader><TableRow><TableHead>Mentee</TableHead><TableHead>Attendance</TableHead></TableRow></TableHeader>
@@ -101,7 +100,7 @@ function GroupDetail({ groupId, onReport }: { groupId: string; onReport: (select
         <h3 id="group-reports-heading">Reports</h3>
         <SingleReportRow kind="week1" group={group} report={reports.find(report => report.kind === "week1")} task={tasks.find(task => task.key === "report.week1")} onReport={onReport} />
         <section className="meetup-section" aria-labelledby="meetup-history-heading">
-          <div className="meetup-section-header"><div><h3 id="meetup-history-heading">Meet-ups</h3><p>Record each session separately.</p></div><Button onClick={() => onReport({ group, kind: "meetup" })} disabled={!group.reportEnabled}><Plus data-icon="inline-start" />New meet-up</Button></div>
+          <div className="meetup-section-header"><div><h3 id="meetup-history-heading">Meet-ups</h3><p>Record each session separately.</p></div><Button size="sm" onClick={() => onReport({ group, kind: "meetup" })} disabled={!group.reportEnabled}><Plus data-icon="inline-start" />New meet-up</Button></div>
           {!group.reportEnabled ? <p className="form-hint">New reports are not available for this group.</p> : null}
           <ErrorNotice error={history.error} retry={history.reload} />
           {history.loading ? <LoadingState label="Loading meet-up history…" /> : meetups.length ? <MeetupHistory group={group} reports={meetups} onReport={onReport} /> : !history.error ? <EmptyState title="No meet-ups recorded">Use New meet-up to record the first session for this group.</EmptyState> : null}
@@ -117,18 +116,18 @@ function GroupDetail({ groupId, onReport }: { groupId: string; onReport: (select
 
 function SingleReportRow({ kind, group, report, task, onReport }: { kind: "week1" | "completion"; group: GroupDto; report?: ReportDto; task?: TaskDto; onReport: (selection: ReportSelection) => void }) {
   const state = reportState(report, task);
-  return <div className="report-summary-row"><strong>{reportLabels[kind]}</strong><StatusMark complete={state.complete}>{state.label}</StatusMark><Button variant="outline" onClick={() => onReport({ group, kind, report })} disabled={!group.reportEnabled && !report}>{state.action}</Button></div>;
+  return <div className="report-summary-row"><strong>{reportLabels[kind]}</strong><StatusMark complete={state.complete}>{state.label}</StatusMark><Button variant="outline" size="sm" onClick={() => onReport({ group, kind, report })} disabled={!group.reportEnabled && !report}>{state.action}</Button></div>;
 }
 
 function MeetupHistory({ group, reports, onReport }: { group: GroupDto; reports: ReportDto[]; onReport: (selection: ReportSelection) => void }) {
   return <>
     <div className="meetup-history-desktop panel-table"><Table className="meetup-history-table"><TableHeader><TableRow><TableHead>Session</TableHead><TableHead>Date</TableHead><TableHead>Status</TableHead><TableHead>Action</TableHead></TableRow></TableHeader><TableBody>{reports.map(report => {
       const state = reportState(report);
-      return <TableRow key={report.id}><TableCell>{report.title}</TableCell><TableCell>{dateLabel(report.meetupDate)}</TableCell><TableCell><StatusMark complete={state.complete}>{state.label}</StatusMark></TableCell><TableCell><Button variant="link" onClick={() => onReport({ group, kind: "meetup", report })}>{state.action}</Button></TableCell></TableRow>;
+      return <TableRow key={report.id}><TableCell>{report.title}</TableCell><TableCell>{dateLabel(report.meetupDate)}</TableCell><TableCell><StatusMark complete={state.complete}>{state.label}</StatusMark></TableCell><TableCell><Button variant="link" size="sm" onClick={() => onReport({ group, kind: "meetup", report })}>{state.action}</Button></TableCell></TableRow>;
     })}</TableBody></Table></div>
     <ul className="meetup-history-mobile">{reports.map(report => {
       const state = reportState(report);
-      return <li key={report.id}><div className="session-identity"><strong>{report.title}</strong><span>{dateLabel(report.meetupDate)}</span></div><StatusMark complete={state.complete}>{state.label}</StatusMark><Button variant="outline" onClick={() => onReport({ group, kind: "meetup", report })}>{state.action}</Button></li>;
+      return <li key={report.id}><div className="session-identity"><strong>{report.title}</strong><span>{dateLabel(report.meetupDate)}</span></div><StatusMark complete={state.complete}>{state.label}</StatusMark><Button variant="outline" size="sm" onClick={() => onReport({ group, kind: "meetup", report })}>{state.action}</Button></li>;
     })}</ul>
   </>;
 }

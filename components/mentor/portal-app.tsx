@@ -45,8 +45,9 @@ function SignedInPortal() {
     if (directory.error) page = <ErrorNotice error={directory.error} retry={directory.reload} />;
     else if (!directory.data) page = <LoadingState label="Loading your groups…" />;
     else if (active === "groups") page = <>
-      {bootstrap.error ? <ErrorNotice error={bootstrap.error} retry={bootstrap.reload} /> : bootstrap.data ? <DataSyncStatus mode={bootstrap.data.mode} dataSync={bootstrap.data.dataSync} /> : null}
+      {bootstrap.error ? <ErrorNotice error={bootstrap.error} retry={bootstrap.reload} /> : bootstrap.data?.dataSync?.stale ? <DataSyncStatus mode={bootstrap.data.mode} dataSync={bootstrap.data.dataSync} /> : null}
       <GroupsView groups={directory.data} selection={groupSelection} onSelectionChange={setGroupSelection} preferredGroupId={bootstrap.data?.groups[0]?.id} onReport={setReport} revision={revision} />
+      {!bootstrap.error && bootstrap.data && !bootstrap.data.dataSync?.stale ? <DataSyncStatus mode={bootstrap.data.mode} dataSync={bootstrap.data.dataSync} /> : null}
     </>;
     else page = <ReportsView key={directory.data.map(group => group.id).sort().join(",")} groups={directory.data} onReport={setReport} revision={revision} />;
   } else if (active === "balance") page = <BalanceView />;

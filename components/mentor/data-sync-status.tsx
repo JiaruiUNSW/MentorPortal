@@ -21,7 +21,7 @@ function SyncTime({ value }: { value: string }) {
 }
 
 function RefreshTimes({ dataSync }: { dataSync: DataSync }) {
-  return <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
+  return <dl className="data-sync-times flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
     <div className="flex flex-wrap gap-x-2"><dt>Last updated</dt><dd><SyncTime value={dataSync.lastSyncedAt} /></dd></div>
     <div className="flex flex-wrap gap-x-2"><dt>Next refresh</dt><dd><SyncTime value={dataSync.nextSyncAt} /></dd></div>
   </dl>;
@@ -31,10 +31,10 @@ function RefreshTimes({ dataSync }: { dataSync: DataSync }) {
 export function DataSyncStatus({ mode, dataSync }: Props) {
   if (mode !== "live" || !dataSync) return null;
   if (dataSync.stale) {
-    return <Alert className="mb-6" role="status" aria-atomic="true">
+    return <Alert className="data-sync-warning mb-6" role="status" aria-atomic="true">
       <AlertTitle>Showing last-known data</AlertTitle>
       <AlertDescription><RefreshTimes dataSync={dataSync} /></AlertDescription>
     </Alert>;
   }
-  return <div className="mb-6" role="status" aria-label="Data refresh status" aria-atomic="true"><RefreshTimes dataSync={dataSync} /></div>;
+  return <footer className="data-sync-footer" role="status" aria-label="Data refresh status" aria-atomic="true"><RefreshTimes dataSync={dataSync} /></footer>;
 }
