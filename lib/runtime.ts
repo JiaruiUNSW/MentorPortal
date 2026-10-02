@@ -1,5 +1,3 @@
-import { env } from "cloudflare:workers";
-
 export interface PortalBindings {
   DB: D1Database;
   BUCKET: R2Bucket;
@@ -16,10 +14,26 @@ export interface PortalBindings {
   MENTOR_PROFILE_URL?: string;
   MENTOR_REDEEM_URL?: string;
   MENTOR_TICKET_URL?: string;
+  MENTOR_CACHE_ENABLED?: string;
+  MENTOR_CACHE_PRIVATE_TTL_HOURS?: string;
+  MENTOR_CACHE_CATALOG_TTL_HOURS?: string;
+  MENTOR_CACHE_MAX_STALE_HOURS?: string;
+  MENTOR_SYNC_ALLOWED_USER_IDS?: string;
+  TRUST_PROXY?: string;
+}
+
+const providerKey = Symbol.for("mentor.portal.bindings-provider");
+type RuntimeGlobal = typeof globalThis & { [providerKey]?: () => PortalBindings };
+
+/** Installed by the server entrypoint; browser input never selects a runtime. */
+export function setBindingsProvider(provider: () => PortalBindings): void {
+  (globalThis as RuntimeGlobal)[providerKey] = provider;
 }
 
 export function getBindings(): PortalBindings {
-  return env as unknown as PortalBindings;
+  const provider = (globalThis as RuntimeGlobal)[providerKey];
+  if (!provider) throw new Error("Portal runtime has not been initialized.");
+  return provider();
 }
 
 export function getRawDb(): D1Database {

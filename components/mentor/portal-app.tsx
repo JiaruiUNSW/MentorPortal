@@ -14,6 +14,7 @@ import { BalanceView, StoreView, TransactionsView } from "./credits";
 import { ProfileView } from "./profile";
 import { SupportView } from "./support";
 import { WebMcpBridge } from "./webmcp";
+import { DataSyncStatus } from "./data-sync-status";
 export function PortalApp() {
   const { session, loading, error, refresh } = useSession();
   if (loading) return <div className="auth-page"><div className="auth-surface"><Link className="portal-brand" href="/">Mentor Portal</Link><LoadingState /></div></div>;
@@ -33,5 +34,5 @@ function SignedInPortal() {
     sync(); window.addEventListener("hashchange", sync); return () => window.removeEventListener("hashchange", sync);
   }, []);
   const navigate = useCallback((view: View) => { setActive(view); window.history.pushState(null, "", `#${view}`); }, []);
-  return <PortalShell active={active} navigate={navigate}><WebMcpBridge active={active} navigate={navigate} />{resource.loading && !resource.data ? <LoadingState /> : resource.error && !resource.data ? <ErrorNotice error={resource.error} retry={resource.reload} /> : resource.data ? <>{active === "groups" ? <GroupsView groups={resource.data.groups} onReport={setReport} revision={revision} /> : active === "reports" ? <ReportsView groups={resource.data.groups} onReport={setReport} revision={revision} /> : active === "balance" ? <BalanceView /> : active === "transactions" ? <TransactionsView /> : active === "store" ? <StoreView /> : active === "profile" ? <ProfileView /> : <SupportView />}<ReportDialog selection={report} close={() => setReport(null)} onSaved={() => { setRevision(value => value + 1); void resource.reload(); }} /></> : null}</PortalShell>;
+  return <PortalShell active={active} navigate={navigate}><WebMcpBridge active={active} navigate={navigate} />{resource.loading && !resource.data ? <LoadingState /> : resource.error && !resource.data ? <ErrorNotice error={resource.error} retry={resource.reload} /> : resource.data ? <>{active === "groups" ? <DataSyncStatus mode={resource.data.mode} dataSync={resource.data.dataSync} /> : null}{active === "groups" ? <GroupsView groups={resource.data.groups} onReport={setReport} revision={revision} /> : active === "reports" ? <ReportsView groups={resource.data.groups} onReport={setReport} revision={revision} /> : active === "balance" ? <BalanceView /> : active === "transactions" ? <TransactionsView /> : active === "store" ? <StoreView /> : active === "profile" ? <ProfileView /> : <SupportView />}<ReportDialog selection={report} close={() => setReport(null)} onSaved={() => { setRevision(value => value + 1); void resource.reload(); }} /></> : null}</PortalShell>;
 }

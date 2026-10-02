@@ -5,6 +5,7 @@ import { readDemo, validateFileParent, writeDemo } from './demo';
 import { claimRequest, completeDemo, completeLive, loadDemo, recordFailure, recordUpstreamPending, type Claim } from './store';
 import { isWrite, requireLiveWriteAccess, requireMentor } from './validation';
 import { fail, MentorError, safeError } from './errors';
+import { invalidateMentorCache, readCachedMentor } from '../mentor-cache';
 import { authorizeLiveParent, bytesAsUpload, fileDto, ownFile, ownFiles, projectLiveAttachments, removeObject, stageUpload, validateDemoFile, type FileRow } from './files';
 
 async function readFiles(bindings:PortalBindings,principal:Principal,request:ClientRequest):Promise<FileRow[]> {
@@ -128,7 +129,11 @@ export async function executeMentor(bindings:PortalBindings,principal:Principal,
   requireLiveWriteAccess(bindings,request.operation);
   if(request.operation==='attachments.download') return fileDownload(bindings,principal,request,requestId);
   if(!isWrite(request.operation)) {
-    if(mode==='live') { const response=await callFlow(bindings,principal,request,requestId); return response.ok ? {...response,data:await projectLiveAttachments(bindings,principal,response.data,requestId)} as BridgeResponse:response; }
+    if(mode==='live') {
+      // Background sync already replaces source attachment handles with account-owned IDs.
+      if(bindings.MENTOR_CACHE_ENABLED==='true') return readCachedMentor(bindings,principal,request,requestId);
+      const response=await callFlow(bindings,principal,request,requestId); return response.ok ? {...response,data:await projectLiveAttachments(bindings,principal,response.data,requestId)} as BridgeResponse:response;
+    }
     return {schemaVersion:'1.0',requestId,ok:true,data:readDemo((await loadDemo(bindings.DB,principal)).state,request)} as BridgeResponse;
   }
   const claim=await claimRequest(bindings.DB,principal,request,requestId);
@@ -140,7 +145,14 @@ export async function executeMentor(bindings:PortalBindings,principal:Principal,
     if(claim.replay.ok && request.operation==='attachments.delete') await removeObject(bindings,principal,(request.payload as OperationPayloads['attachments.delete']).attachmentId);
     return claim.replay;
   }
-  try { return mode==='demo' ? await writePreview(bindings,principal,request,claim) : await writeLive(bindings,principal,request,claim); }
+  try {
+    const response=mode==='demo' ? await writePreview(bindings,principal,request,claim) : await writeLive(bindings,principal,request,claim);
+    if(mode==='live' && response.ok && bindings.MENTOR_CACHE_ENABLED==='true') {
+      try { await invalidateMentorCache(bindings,principal); }
+      catch { console.error('mentor_cache_invalidation_failed'); }
+    }
+    return response;
+  }
   catch(error) {
     if(mode==='live' && error instanceof MentorError && error.code==='REQUEST_IN_PROGRESS') {
       error.requestId=claim.row.request_id;

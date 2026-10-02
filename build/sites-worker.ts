@@ -1,4 +1,5 @@
 import handler from "vinext/server/fetch-handler";
+import "../lib/runtime-worker";
 import { runWithConnectorBinding } from "../lib/connector-context";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 

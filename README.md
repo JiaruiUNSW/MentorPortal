@@ -1,46 +1,84 @@
 # Mentor Portal
 
-Independent invitation-account web portal for the seven Mentor modules in published Power Apps v548: My Groups, Reports, Balance, Transactions, Credit Store, My Profile and Support. React/Vinext UI, Cloudflare Worker backend, D1 accounts/structured state, and R2 protected files.
+An independent **Node.js 24 + Next.js** service for My Groups, Reports, Balance, Transactions, Credit Store, My Profile and Support. Mentors sign in with invitation-based portal accounts; a ChatGPT account or GPT Sites session is not required.
 
-## Delivery boundary
+Production runs two Docker services: `web` serves the application and `sync` collects SharePoint data through the configured server-side HTTP bridge. Both use the `portal-data` volume: SQLite for accounts, sessions and cached records, plus a private filesystem bucket for files. Neither storage directory is publicly served.
 
-The initial hosted release is an owner-private **synthetic preview**. Preview saves persist in D1/R2 for that account and never invoke Microsoft services. No real Mentor records, credentials or exported application packages are shipped in this repository.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for installation, account migration, HTTPS, backups and rollback. The public domain is **not yet selected**. This repository does not assert that deployment or broad external access is complete.
 
-Live transport fails closed until reviewed Power Automate adapters are configured and activated. Flow review artifacts are in `../outputs/mentor-web-build/power-automate/`; they are stopped drafts, not a live integration. Approval/credit fulfillment, attachment concurrency, the service-only idempotency ledger and tenant connector behaviour need runtime validation before activation. See `DATA-CONTRACT.md` for exact limits.
+## Data and access
+
+| Data | Background refresh |
+| --- | --- |
+| Private: profile, groups, report/expense history, credit, personalized ranking, transactions, tickets and reward-request history | Every 24 hours |
+| Catalog: Credit Store rewards and options | Every 48 hours |
+| Maximum usable snapshot age | 72 hours from its last successful synchronization |
+
+Intervals run from a successful snapshot, not a fixed midnight schedule. The worker checks for due work every 30 seconds. With `MENTOR_CACHE_ENABLED=true`, ordinary page-data reads use local SQLite snapshots and **never start upstream HTTP requests**. Keep this setting enabled: disabling it selects the retained legacy synchronous read path. There is no page-triggered synchronization button.
+
+Snapshots are isolated by portal account, SharePoint `User.ID` and namespace; catalog data is also identity-scoped. A failed refresh retains the complete last-good snapshot, with a stale notice, until the hard age limit. A definitive source authorization failure purges both snapshots for that identity and denies access. Cold or hard-expired data returns an explicit unavailable state rather than fetching synchronously or falling back to demo data.
+
+Live business writes are **disabled by default**. If explicitly enabled after review, writes still use real-time source authorization and version/idempotency checks, then schedule a background cache refresh. A successful write acknowledgement can precede its appearance in cached history. Attachment downloads also retain their live authorization path; attachment bytes are not preloaded into the page cache.
+
+The initial live pilot requires `MENTOR_SYNC_ALLOWED_USER_IDS`. An empty list admits no Mentor account. IDs must also be approved by the upstream Flow: adding an ID locally does not open source access. Existing source adapters are limited to approved IDs; this is not a general opening for every external mentor.
+
+## Accounts
+
+Accounts are independent email/password invitations, with server-owned Mentor ID mappings, revocable sessions and origin/CSRF checks. Passwords retain standard salted **PBKDF2-HMAC-SHA256 with 600,000 iterations**. Account administrators can invite or revoke access but cannot act as Mentors through the data API.
+
+For a new installation, first-administrator setup requires a private `SETUP_TOKEN` of at least 32 characters; remove it after setup. Existing-account migration preserves reviewed password hashes, imports no sessions, and rejects outstanding invitations. No invitation email is sent automatically. Details: [account API](AUTH-CONTRACT.md) and [migration procedure](DEPLOYMENT.md#existing-account-migration).
 
 ## Local development
 
-Use Node 22.13+ and the checked-in npm lockfile. The bundled Sites setup uses the portable profile on macOS.
+Use **Node 24** and the checked-in lockfile. For a new local demo checkout, put these non-production settings in a private `.env.local`:
 
-```sh
-npm run install:ci
-npm run dev -- --hostname 127.0.0.1 --port 5173
-npm run typecheck
-npm test
+```dotenv
+PORTAL_MODE=demo
+APP_ORIGIN=http://127.0.0.1:3000
+DATA_DIR=./data
 ```
 
-Local `.env.local`: `PORTAL_MODE=demo` and `APP_ORIGIN=http://127.0.0.1:5173`. Missing mode defaults to live, never to a concealed demo fallback. `Explore preview` creates an isolated synthetic Mentor account. Real invitations use independent email/password credentials.
+```sh
+npm ci
+npm run dev
+```
 
-Schemas are `db/auth-schema.ts` and `db/mentor-schema.ts`, re-exported by `db/schema.ts`. `npm run db:generate` generates append-only Drizzle migrations. Apply each migration once locally with generated `dist/server/wrangler.json` and `.wrangler/state`; hosting applies production migrations separately. Never rewrite an applied migration.
+Open `http://127.0.0.1:3000`. `Explore preview` is available only when the backend confirms demo mode. Demo records are synthetic, persistent and isolated from SharePoint. A missing mode defaults to live.
 
-## Accounts and permissions
+```sh
+npm run typecheck
+npm test
+npm run build
+```
 
-See `AUTH-CONTRACT.md`. Passwords use salted PBKDF2-SHA256, sessions are persistent and revocable, and all POSTs enforce origin/CSRF. Only the server maps accounts to stable SharePoint Mentor User IDs. Minimal administrators invite/revoke accounts; they cannot impersonate a Mentor through the data API.
+`build` produces Next's standalone output and the `standalone-dist` synchronization/import bundles. Migrations in `drizzle/` are applied and checksum-checked at Node startup; do not edit an applied migration.
 
-Password hashing retains the standard 600,000-round PBKDF2-SHA256 format. If hosted Workers rejects that native call with its explicit iteration-limit error, pinned `@noble/hashes` computes the same standard hash. Other crypto errors remain failures. Tests simulate this production limit because local workerd does not enforce it. Confirm the deployed path with a nonexistent synthetic login and check platform CPU metrics; this probe creates no account and only increments the normal authentication rate-limit counters. Diagnostics log fixed codes and numeric KDF parameters, never credentials or raw exception data.
+The synchronization scripts are `npm run sync:once` and `npm run sync:worker`. They require runtime variables in their process environment. To load a private environment file safely with Node 24:
 
-First administrator setup requires a random `SETUP_TOKEN` of at least 32 characters in runtime secrets. It is unnecessary for ordinary demo exploration. Remove it after bootstrap. No invitation emails are sent automatically; an administrator can copy an activation link. Public visitor access is not enabled by the initial private deployment.
+```sh
+npm run sync:build
+node --env-file=.env.production --run sync:once
+node --env-file=.env.production --run sync:worker
+```
 
-## Data boundary
+Run either the long-running worker or an isolated one-shot check as appropriate. A one-shot check processes due accounts; it is not an unconditional force refresh. Inspect its outcome and synchronized count.
 
-`POST /api/mentor` accepts a fixed operation enum, validated payload and optional idempotency key. Actor IDs, credentials, arbitrary URLs/lists/queries and roles are never browser-controlled. Retries retain their original idempotency key and request reference; uncertain live writes require reconciliation. Ordinary reads/saves are synchronous, while redemption acknowledgement is distinct from approval or fulfillment.
+For an explicit operator refresh, pass `--force` together with `--once`. Credit-criteria text uses the existing Canvas v548 presentation rules when the source omits it; those labels never calculate or award credits.
 
-Live server configuration: `MENTOR_BRIDGE_KEY` plus `MENTOR_READ_URL`, `MENTOR_ATTENDANCE_URL`, `MENTOR_REPORT_URL`, `MENTOR_EXPENSE_URL`, `MENTOR_ATTACHMENT_URL`, `MENTOR_PROFILE_URL`, `MENTOR_REDEEM_URL`, `MENTOR_TICKET_URL`. Each adapter revalidates active Mentor access and record ownership. Never place these values in browser code or the hosting manifest.
+## Production configuration
 
-Live access is read-only by default. `MENTOR_LIVE_WRITES_ENABLED=true` is a separate, explicit server opt-in after write-path validation; missing or any other value rejects all live mutations before idempotency claims, file staging or dispatch. Session responses expose only the non-secret `readOnly` capability, and mutation controls reflect it. This gate does not affect demo saves or account administration. Reads still maintain session, rate-limit, audit and attachment-handle metadata in D1.
+Copy [`.env.example`](.env.example) to a private `.env.production` with mode `0600`, then supply the approved ID scope and bridge credentials privately. Defaults are live mode, cache enabled, and live writes disabled. The Compose file binds port `3100` to **127.0.0.1 only** and loads `.env.production` through `env_file`.
 
-Live Flow reads allow 45 seconds for a response; writes retain their 20-second uncertainty boundary. This accommodates the 14.8–19.9 second owner balance reads measured on 2 October 2026. Increasing the deadline prevents premature failures; it does not make the upstream Flow faster. The first connection remains limited to verified source User.ID 1, with the hosted site in demo mode until live accounts and page-level integration are verified.
+Before public access, configure an exact HTTPS `APP_ORIGIN`. Only set `TRUST_PROXY=true` behind an isolated proxy that overwrites `X-Real-IP`; direct public access to the backend must remain blocked. Keep signed Flow URLs, bridge keys, account exports, SQLite files, cached personal records and private objects out of this public repository and all public assets.
 
-## Publishing
+`GET /api/health` checks the web process's database access. It does not prove that upstream synchronization or source permissions are healthy; also inspect `sync` logs and authenticated data freshness.
 
-Reuse the Site project ID and logical bindings in `.openai/hosting.json`. The main task owns registration, runtime secrets, source publishing and deployment. Keep this initial Site owner-private until visitor sharing and live-data activation have been reviewed. Signed URLs and original exported packages remain outside public assets and source control.
+## Compatibility and reference
+
+The source retains the legacy Worker adapter, tests and `build:legacy-worker` / `dev:legacy-worker` scripts for compatibility. The Node production path uses neither Sites hosting nor Cloudflare D1/R2 services: `instrumentation.ts` installs the SQLite/filesystem adapters.
+
+- [Browser/data contract](DATA-CONTRACT.md)
+- [Standalone storage behavior](lib/standalone/README.md)
+- [Cache, scheduling and isolation details](lib/mentor-cache/README.md)
+
+Public source should contain only application code, templates and synthetic fixtures. Production data and private migration material belong outside the repository.

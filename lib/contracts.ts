@@ -243,7 +243,7 @@ export interface OperationPayloads {
   'tickets.update': { ticketId: Id; expectedVersion: RecordVersion; title: string; description: string };
 }
 export interface OperationResults {
-  bootstrap: { mentor: MentorDto; balance: BalanceDto; groups: GroupDto[]; tasks: (TaskDto & { groupId: Id })[]; mode: 'demo' | 'live'; previewLabel: string | null };
+  bootstrap: { mentor: MentorDto; balance: BalanceDto; groups: GroupDto[]; tasks: (TaskDto & { groupId: Id })[]; mode: 'demo' | 'live'; previewLabel: string | null; dataSync?: { lastSyncedAt: string; nextSyncAt: string; stale: boolean } };
   'groups.list': Page<GroupDto>;
   'groups.get': { group: GroupDto; mentees: MenteeDto[]; reports: ReportDto[]; expenses: ExpenseDto[]; tasks: TaskDto[] };
   'reports.list': Page<ReportDto>;
@@ -287,7 +287,7 @@ export type ErrorCode =
   | 'OWNERSHIP_DENIED' | 'EDIT_NOT_ALLOWED' | 'VERSION_CONFLICT' | 'IDEMPOTENCY_CONFLICT'
   | 'REQUEST_IN_PROGRESS' | 'RATE_LIMITED' | 'INSUFFICIENT_CREDIT' | 'REWARD_UNAVAILABLE'
   | 'UNSUPPORTED_OPTION_COST' | 'ATTACHMENT_REJECTED' | 'PARTIAL_WRITE' | 'UPSTREAM_UNAVAILABLE'
-  | 'DRAFT_NOT_CONFIGURED';
+  | 'DRAFT_NOT_CONFIGURED' | 'CACHE_PENDING' | 'CACHE_EXPIRED';
 export type BridgeResponse<O extends Operation = Operation> =
   | { schemaVersion: '1.0'; requestId: string; ok: true; data: OperationResults[O]; replayed?: boolean }
   | { schemaVersion: '1.0'; requestId: string; ok: false; error: { code: ErrorCode; message: string; retryable: boolean; recoveryReference?: string } };

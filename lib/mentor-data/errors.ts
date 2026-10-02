@@ -20,7 +20,7 @@ export function statusForError(code: ErrorCode): number {
   if (['MENTOR_FORBIDDEN', 'OWNERSHIP_DENIED', 'EDIT_NOT_ALLOWED'].includes(code)) return 403;
   if (code === 'RECORD_NOT_FOUND') return 404;
   if (code === 'RATE_LIMITED') return 429;
-  if (['BRIDGE_UNAUTHORIZED', 'DRAFT_NOT_CONFIGURED', 'UPSTREAM_UNAVAILABLE'].includes(code)) return 503;
+  if (['BRIDGE_UNAUTHORIZED', 'DRAFT_NOT_CONFIGURED', 'UPSTREAM_UNAVAILABLE', 'CACHE_PENDING', 'CACHE_EXPIRED'].includes(code)) return 503;
   if (['VERSION_CONFLICT', 'IDEMPOTENCY_CONFLICT', 'REQUEST_IN_PROGRESS', 'PARTIAL_WRITE', 'INSUFFICIENT_CREDIT', 'REWARD_UNAVAILABLE', 'UNSUPPORTED_OPTION_COST'].includes(code)) return 409;
   return 400;
 }

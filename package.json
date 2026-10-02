@@ -3,13 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "install:ci": "node scripts/install-ci.mjs",
-    "dev": "node scripts/run-framework.mjs dev",
-    "build": "node scripts/run-framework.mjs build",
-    "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
+    "dev": "next dev --hostname 127.0.0.1 --port 3000",
+    "build": "next build --webpack && node scripts/build-sync.mjs",
+    "start": "next start --hostname 127.0.0.1 --port 3000",
+    "build:legacy-worker": "node scripts/run-framework.mjs build",
+    "dev:legacy-worker": "node scripts/run-framework.mjs dev",
+    "sync:build": "node scripts/build-sync.mjs",
+    "sync:once": "node standalone-dist/sync-worker.mjs --once",
+    "sync:worker": "node standalone-dist/sync-worker.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit --incremental false",

@@ -18,6 +18,7 @@ before(async () => {
   const bundle = await build({
     stdin: {
       contents: `
+        import './lib/runtime-worker';
         import { hashPassword, verifyPassword } from './lib/auth/crypto';
         import { GET as session } from './app/api/auth/session/route';
         import { POST as setup } from './app/api/auth/setup/route';

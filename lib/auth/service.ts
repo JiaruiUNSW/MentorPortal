@@ -35,6 +35,7 @@ interface InviteRow {
 interface ServiceOptions {
   mode: Mode;
   appOrigin?: string;
+  trustProxy?: boolean;
   setupToken?: string;
   liveWritesEnabled?: boolean;
   now?: () => number;
@@ -54,6 +55,7 @@ export class AuthService {
   readonly mode: Mode;
   readonly readOnly: boolean;
   private readonly appOrigin?: string;
+  private readonly trustProxy: boolean;
   private readonly setupToken?: string;
   private readonly clock: () => number;
 
@@ -62,6 +64,7 @@ export class AuthService {
     this.mode = options.mode;
     this.readOnly = options.mode === 'live' && options.liveWritesEnabled !== true;
     this.appOrigin = options.appOrigin;
+    this.trustProxy = options.trustProxy === true;
     this.setupToken = options.setupToken;
     this.clock = options.now ?? Date.now;
   }
@@ -80,7 +83,7 @@ export class AuthService {
   }
 
   private async sessionContext(request: Request): Promise<SessionContext | null> {
-    const token = getCookie(request, cookieNames(request).session);
+    const token = getCookie(request, cookieNames(request, this.appOrigin).session);
     if (!token) return null;
     const tokenHash = await hashToken(token);
     const row = await this.db.prepare(`SELECT a.*, s.token_hash, s.expires_at, s.revoked_at FROM auth_sessions s JOIN auth_accounts a ON a.id = s.account_id WHERE s.token_hash = ?`).bind(tokenHash).first<SessionRow>();
@@ -104,7 +107,7 @@ export class AuthService {
   async requireMutationProtection(request: Request): Promise<void> {
     checkOrigin(request, this.appOrigin);
     const context = await this.sessionContext(request);
-    const token = context?.token ?? getCookie(request, cookieNames(request).csrf);
+    const token = context?.token ?? getCookie(request, cookieNames(request, this.appOrigin).csrf);
     await checkCsrf(request, token);
   }
 
@@ -112,8 +115,8 @@ export class AuthService {
     applicationOrigin(request, this.appOrigin);
     const context = await this.sessionContext(request);
     if (context) return this.json({ user: context.principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(context.token) });
-    const token = getCookie(request, cookieNames(request).csrf) ?? randomToken();
-    return this.json({ user: null, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(token), error: { code: "UNAUTHENTICATED", message: "Please sign in to continue." } }, 401, [setCookie(request, "csrf", token, 3600), setCookie(request, "session", "", 0)]);
+    const token = getCookie(request, cookieNames(request, this.appOrigin).csrf) ?? randomToken();
+    return this.json({ user: null, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(token), error: { code: "UNAUTHENTICATED", message: "Please sign in to continue." } }, 401, [setCookie(request, "csrf", token, 3600, this.appOrigin), setCookie(request, "session", "", 0, this.appOrigin)]);
   }
 
   private async rateLimit(request: Request, action: string, limit: number, windowSeconds: number, email?: string): Promise<void> {
@@ -121,7 +124,7 @@ export class AuthService {
     const windowMs = windowSeconds * 1000;
     const windowStart = Math.floor(now / windowMs) * windowMs;
     const expiresAt = windowStart + windowMs;
-    const subjects = [`ip:${requestSource(request)}`];
+    const subjects = [`ip:${requestSource(request, { trustProxy: this.trustProxy, appOrigin: this.appOrigin })}`];
     if (email) subjects.push(`email:${email}`);
     const keys = await Promise.all(subjects.map(async (subject) => `${await hashToken(`${this.mode}:${action}:${subject}`)}:${windowStart}`));
     const results = await this.db.batch<{ hits: number }>(keys.map((key) => this.db.prepare(`INSERT INTO auth_rate_limits (key, hits, expires_at) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET hits = hits + 1 RETURNING hits`).bind(key, expiresAt)));
@@ -134,14 +137,14 @@ export class AuthService {
     const maxAge = principal.role === "admin" ? 12 * 3600 : 7 * 24 * 3600;
     const token = randomToken();
     const tokenHash = await hashToken(token);
-    const old = getCookie(request, cookieNames(request).session);
+    const old = getCookie(request, cookieNames(request, this.appOrigin).session);
     const statements = [this.db.prepare(`INSERT INTO auth_sessions (token_hash, account_id, created_at, expires_at, revoked_at) SELECT ?, id, ?, ?, NULL FROM auth_accounts WHERE id = ? AND status = 'active' AND mode = ?`).bind(tokenHash, now, now + maxAge * 1000, principal.accountId, this.mode)];
     if (old) statements.push(this.db.prepare(`UPDATE auth_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL`).bind(now, await hashToken(old)));
     statements.push(this.db.prepare(`DELETE FROM auth_rate_limits WHERE key IN (SELECT key FROM auth_rate_limits WHERE expires_at < ? LIMIT 100)`).bind(now));
     statements.push(this.db.prepare(`DELETE FROM auth_sessions WHERE token_hash IN (SELECT token_hash FROM auth_sessions WHERE expires_at < ? LIMIT 100)`).bind(now - 24 * 3600 * 1000));
     const results = await this.db.batch(statements);
     if (results[0].meta.changes !== 1) throw UNAUTHENTICATED();
-    return this.json({ user: principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(token) }, status, [setCookie(request, "session", token, maxAge), setCookie(request, "csrf", "", 0)]);
+    return this.json({ user: principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(token) }, status, [setCookie(request, "session", token, maxAge, this.appOrigin), setCookie(request, "csrf", "", 0, this.appOrigin)]);
   }
 
   async login(request: Request): Promise<Response> {
@@ -173,10 +176,10 @@ export class AuthService {
   async logout(request: Request): Promise<Response> {
     await this.requireMutationProtection(request);
     await readAuthJson(request, []);
-    const token = getCookie(request, cookieNames(request).session);
+    const token = getCookie(request, cookieNames(request, this.appOrigin).session);
     if (token) await this.db.prepare(`UPDATE auth_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL`).bind(this.clock(), await hashToken(token)).run();
     const csrf = randomToken();
-    return this.json({ user: null, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(csrf) }, 200, [setCookie(request, "session", "", 0), setCookie(request, "csrf", csrf, 3600)]);
+    return this.json({ user: null, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(csrf) }, 200, [setCookie(request, "session", "", 0, this.appOrigin), setCookie(request, "csrf", csrf, 3600, this.appOrigin)]);
   }
 
   async setup(request: Request): Promise<Response> {
