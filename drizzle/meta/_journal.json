@@ -36,6 +36,13 @@
       "when": 1790959183221,
       "tag": "0004_mentor_resource_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790966087289,
+      "tag": "0005_redemption_status_refresh",
+      "breakpoints": true
     }
   ]
 }

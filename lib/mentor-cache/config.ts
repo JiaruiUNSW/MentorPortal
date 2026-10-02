@@ -1,7 +1,18 @@
 import { fail } from '../mentor-data/errors';
+import type { RedemptionDto } from '../contracts';
 import type { CacheBindings, CacheConfig, SyncLimits, SyncOptions } from './types';
 
 const HOUR = 3_600_000;
+export const REDEMPTION_REFRESH_INTERVAL_MS = 5 * 60_000;
+export const SOURCE_AUTH_DENIALS = new Set(['MENTOR_FORBIDDEN', 'OWNERSHIP_DENIED', 'BRIDGE_UNAUTHORIZED']);
+export function hasUnsettledRedemptions(items: RedemptionDto[]): boolean {
+  return items.some(item => {
+    if (item.status === 'needs_review') return false;
+    if (item.status === 'approved' && item.creditState === 'debited') return false;
+    if (item.status === 'rejected' && item.creditState === 'refunded') return false;
+    return true; // Pending/processing, or an incomplete/unknown terminal credit state.
+  });
+}
 function hours(value: string | undefined, fallback: number): number {
   if (value === undefined || value === '') return fallback * HOUR;
   if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 72) fail('DRAFT_NOT_CONFIGURED', 'Cache intervals must be between one and 72 hours.', 503);

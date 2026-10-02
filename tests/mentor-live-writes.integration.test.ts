@@ -43,6 +43,7 @@ before(async()=>{
       let data;
       switch(sent.operation){
         case 'profile.get':data=state.profile;break;
+        case 'rewards.get':data={reward:{id:p.rewardId,name:'Synthetic reward',inStock:true,points:40,discountPoints:null,effectivePoints:40,productType:'Voucher',imageUrl:null},options:[]};break;
         case 'groups.get':data=state.detail;break;
         case 'reports.get':data={report:state.detail.reports.find(report=>report.id===p.reportId&&report.kind===p.kind)};break;
         case 'tickets.get':data={ticket:state.tickets.find(ticket=>ticket.id===p.ticketId)};break;
@@ -277,7 +278,7 @@ test('profile confirmation is immediate while redemption acknowledgement never i
   const original=data<'profile.get'>(await read('profile.get'));
   const profile=data<'profile.update'>(await write('profile.update',{expectedVersion:original.profile.version,country:'Canada',phoneNumber:'0412345678',communicationChannels:[],programs:[],stream:'',otherStream:'',under18:false,wwcc:'WWC12345E',wwccExpiryDate:'2029-01-01'})).profile;
   const cached=data<'profile.get'>(await read('profile.get'));assert.equal(cached.profile.country,'Canada');assert.equal(cached.profile.version,profile.version);assert.deepEqual(cached.choices,original.choices);
-  const redemption=data<'redemptions.create'>(await write('redemptions.create',{rewardId:'44',optionIds:[],comment:'Pending approval'})).redemption;
+  const redemption=data<'redemptions.create'>(await write('redemptions.create',{rewardId:'44',optionIds:[],comment:'Pending approval',expectedPoints:40})).redemption;
   assert.equal(data<'redemptions.list'>(await read('redemptions.list')).items[0].id,redemption.id);assert.equal(redemption.status,'pending');assert.equal(redemption.creditState,'not_debited');assert.equal(data<'balance.get'>(await read('balance.get')).balance,100);
 });
 
@@ -292,7 +293,7 @@ test('source version order wins when acknowledgement completion times arrive out
 
 test('a lost browser key cannot create another uncertain redemption intent',async()=>{
   await command({action:'control',control:{transportOperation:'redemptions.create'}});
-  const payload={rewardId:'44',optionIds:[],comment:'Pending only'};
+  const payload={rewardId:'44',optionIds:[],comment:'Pending only',expectedPoints:40};
   assert.equal(code(await write('redemptions.create',payload)),'PARTIAL_WRITE');
   await command({action:'control',control:{}});
   assert.equal(code(await write('redemptions.create',payload)),'PARTIAL_WRITE');

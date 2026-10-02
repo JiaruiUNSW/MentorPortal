@@ -17,23 +17,46 @@ export function useResource<T>(load: () => Promise<T>, revision: unknown = 0) {
   return { data: state.data, setData, loading: state.pending || state.loader !== load || state.revision !== revision, error: state.loader === load && state.revision === revision ? state.error : null, reload };
 }
 const uncertainKeys = new Map<string, string>();
+type RetryFailure = { signature: string; key: string; code?: string };
+/** Explicit review can retire only the exact retry key of a known safe version conflict. */
+export function clearVersionConflictRetry(keys: Map<string, string>, failure: RetryFailure | null, pending: boolean): boolean {
+  if (pending || failure?.code !== "VERSION_CONFLICT" || keys.get(failure.signature) !== failure.key) return false;
+  keys.delete(failure.signature);
+  return true;
+}
 export function useMutation() {
   const readOnly = useMentorReadOnly();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const failedRequest = useRef<RetryFailure | null>(null);
+  const activeRequests = useRef(0);
   async function run<O extends Operation>(operation: O, payload: OperationPayloads[O]): Promise<OperationResults[O] | null> {
+    failedRequest.current = null;
     if (readOnly) { setError(new Error('This portal is currently read-only. Changes are not enabled yet.')); return null; }
+    activeRequests.current += 1;
     setPending(true); setError(null);
+    let attempt: RetryFailure | null = null;
     try {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([operation, payload])));
       const signature = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
       const key = uncertainKeys.get(signature) || crypto.randomUUID();
       uncertainKeys.set(signature, key);
+      attempt = { signature, key };
       const result = await mentorRequest(operation, payload, key); uncertainKeys.delete(signature); return result; }
-    catch (e) { setError(e instanceof Error ? e : new Error("The change was not saved. Please try again.")); return null; }
-    finally { setPending(false); }
+    catch (e) {
+      const failure = e instanceof Error ? e : new Error("The change was not saved. Please try again.");
+      failedRequest.current = attempt ? { ...attempt, code: (failure as Error & { code?: string }).code } : null;
+      setError(failure); return null;
+    }
+    finally { activeRequests.current -= 1; setPending(activeRequests.current > 0); }
   }
-  return { run, pending, readOnly, error, clearError: () => setError(null) };
+  function resetConflict(): boolean {
+    if (!clearVersionConflictRetry(uncertainKeys, failedRequest.current, activeRequests.current > 0)) return false;
+    failedRequest.current = null;
+    setError(null);
+    return true;
+  }
+  return { run, pending, readOnly, error, resetConflict, clearError: () => setError(null) };
 }
 
 export function usePagedResource<T extends { id: string }>(load: (cursor?: string) => Promise<{ items: T[]; nextCursor: string | null }>, revision: unknown = 0) {

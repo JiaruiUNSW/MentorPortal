@@ -92,8 +92,13 @@ function mergeConfirmed(snapshot: PrivateSnapshot, principal: Principal, request
     case 'redemptions.create': {
       const { redemption } = response.data as OperationResults['redemptions.create'];
       if (redemption.rewardId !== payload.rewardId) fail('OWNERSHIP_DENIED', 'The confirmed redemption does not match this request.', 403);
-      if (allow(`redemption:${redemption.id}`)) upsert(snapshot.redemptions, redemption, item => item.id === redemption.id);
-      // The response acknowledges a request, not the resulting balance, stock or approval.
+      const existing=snapshot.redemptions.filter(item=>item.id===redemption.id||item.requestReference===redemption.requestReference);
+      if(existing.some(item=>item.id!==redemption.id||item.requestReference!==redemption.requestReference||item.rewardId!==redemption.rewardId))fail('IDEMPOTENCY_CONFLICT','The confirmed redemption identity conflicts with the cached request.',409);
+      // An intake ACK may arrive after the worker's processing/debit/refund result,
+      // including on its first HTTP response. Preserve the existing source DTO.
+      if(existing.length)break;
+      if (allow(`redemption:${redemption.id}`)) snapshot.redemptions.unshift(redemption);
+      // The response acknowledges a new request, not its resulting balance or approval.
       break;
     }
     case 'attachments.upload': case 'attachments.delete': {
@@ -157,7 +162,8 @@ export async function applyConfirmedWriteToCache(bindings: CacheBindings, princi
     const snapshot = JSON.parse(row.snapshot_json) as PrivateSnapshot;
     if (snapshot.schemaVersion !== 1) fail('UPSTREAM_UNAVAILABLE', 'The stored snapshot cannot be updated.', 503);
     // A replay must not roll back a complete source snapshot published after that save.
-    if (!options.replayed || row.synced_at < options.completedAt) mergeConfirmed(snapshot, principal, request, response, options);
+    const sourceConfirmedAt=request.operation==='redemptions.create'?Math.max(row.synced_at,snapshot.redemptionStatusSyncedAt??0):row.synced_at;
+    if (!options.replayed || sourceConfirmedAt < options.completedAt) mergeConfirmed(snapshot, principal, request, response, options);
     const json = JSON.stringify(snapshot);
     if (new TextEncoder().encode(json).byteLength > DEFAULT_LIMITS.maxSnapshotBytes) fail('UPSTREAM_UNAVAILABLE', 'The updated snapshot exceeds its supported bound.', 503);
     const token = crypto.randomUUID(), now = Date.now(), generation = crypto.randomUUID().replaceAll('-', '');

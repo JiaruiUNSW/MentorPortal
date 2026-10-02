@@ -1,0 +1,25 @@
+Host mentor-portal-npm-tunnel
+    HostName 54.206.250.179
+    Port 22
+    User mentor_origin_tunnel
+    AddressFamily inet
+    BatchMode yes
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    PreferredAuthentications publickey
+    IdentitiesOnly yes
+    IdentityAgent none
+    IdentityFile /etc/mentor-portal/origin-tunnel/id_ed25519
+    UserKnownHostsFile /etc/mentor-portal/origin-tunnel/known_hosts
+    GlobalKnownHostsFile /dev/null
+    HostKeyAlgorithms ssh-ed25519
+    StrictHostKeyChecking yes
+    CheckHostIP yes
+    UpdateHostKeys no
+    ExitOnForwardFailure yes
+    ConnectTimeout 10
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+    TCPKeepAlive no
+    RemoteForward 172.30.253.1:13100 127.0.0.1:3100
+    RequestTTY no

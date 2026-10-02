@@ -4,7 +4,7 @@ import { callFlow } from '../flow-bridge';
 import { fail, safeError } from '../mentor-data/errors';
 import { projectLiveAttachments } from '../mentor-data/files';
 import { CREDIT_CRITERIA } from '../mentor-data/credit-criteria';
-import type { CacheBindings, CatalogSnapshot, Lease, PrivateSnapshot, SyncLimits, SyncOptions } from './types';
+import type { CacheBindings, CatalogSnapshot, Lease, PrivateSnapshot, RedemptionStatusSnapshot, SyncLimits, SyncOptions } from './types';
 import { renewLease } from './store';
 
 export interface SourceReader {
@@ -125,4 +125,13 @@ export async function collectCatalog(source: SourceReader, limits: SyncLimits): 
   const snapshot: CatalogSnapshot = { schemaVersion: 1, rewards };
   boundedSnapshot(snapshot, limits.maxSnapshotBytes);
   return snapshot;
+}
+/** Existing actor-authorized read RPCs only; no profile/group/catalog or attachment reads. */
+export async function collectRedemptionStatus(source: SourceReader, limits: SyncLimits): Promise<RedemptionStatusSnapshot> {
+  const redemptions = await source.page('redemptions.list', {}, limits.maxListItems);
+  const sourceBalance = await source.read('balance.get', {});
+  const transactions = await source.page('transactions.list', {}, limits.maxListItems);
+  const result = { redemptions, transactions, balance: { ...sourceBalance, creditCriteria: sourceBalance.creditCriteria ?? CREDIT_CRITERIA } };
+  boundedSnapshot(result, limits.maxSnapshotBytes);
+  return result;
 }

@@ -42,7 +42,7 @@ export const payloadSchemas = {
   'attachments.download': z.object({ ...parent, attachmentId: id }).strict(),
   'attachments.delete': z.object({ ...parent, expectedVersion: version.optional(), attachmentId: id }).strict(),
   'profile.update': z.object({ expectedVersion: version, country: required(100), phoneNumber: required(40).refine(v => /^[+\d ()-]{5,40}$/.test(v)), communicationChannels: z.array(required(50)).max(10), programs: z.array(required(100)).max(10), stream: text(100), otherStream: text(200), under18: z.boolean(), wwcc: text(50).optional(), wwccExpiryDate: dateOnly.optional(), dateOfBirth: dateOnly.optional() }).strict().refine(p => p.under18 ? !!p.dateOfBirth : !!p.wwcc && !!p.wwccExpiryDate),
-  'redemptions.create': z.object({ rewardId: id, optionIds: z.array(id).max(5).refine(v => new Set(v).size === v.length), comment: text(1000) }).strict(),
+  'redemptions.create': z.object({ rewardId: id, optionIds: z.array(id).max(5).refine(v => new Set(v).size === v.length), comment: text(1000), expectedPoints: z.number().finite().nonnegative() }).strict(),
   'tickets.create': z.object({ title: required(200), description: required(10000), attachmentIds: attachmentIds.optional() }).strict(),
   'tickets.update': z.object({ ticketId: id, expectedVersion: version, title: required(200), description: required(10000) }).strict(),
 } satisfies Record<Operation, z.ZodTypeAny>;

@@ -185,6 +185,8 @@ export function writeDemo(original: DemoState, request: ClientRequest, context: 
     }
     case 'redemptions.create': {
       const v = p as OperationPayloads['redemptions.create']; const reward = owned(state.rewards, v.rewardId);
+      if (!Number.isFinite(v.expectedPoints) || v.expectedPoints < 0) fail('VALIDATION_ERROR', 'Review the reward points before submitting.');
+      if (v.expectedPoints !== reward.effectivePoints) fail('VERSION_CONFLICT', 'The reward points have changed. Review the updated reward before submitting again.', 409);
       if (!reward.inStock) fail('REWARD_UNAVAILABLE', 'This reward is unavailable.', 409);
       const options = v.optionIds.map(id => owned(state.options, id));
       if (options.some(o => o.rewardId !== reward.id || !o.inStock)) fail('REWARD_UNAVAILABLE', 'A selected option is unavailable.', 409);

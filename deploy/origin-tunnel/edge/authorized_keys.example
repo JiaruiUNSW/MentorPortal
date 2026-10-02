@@ -1,0 +1,1 @@
+from="140.238.205.237",no-agent-forwarding,no-X11-forwarding,no-pty,no-user-rc,permitlisten="172.30.253.1:13100" ssh-ed25519 REPLACE_WITH_NEW_MENTOR_PUBLIC_KEY mentor-portal-origin-tunnel@service-manager

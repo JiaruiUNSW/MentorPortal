@@ -1,6 +1,7 @@
 import type { Principal } from '../runtime';
 import { fail } from '../mentor-data/errors';
 import { requireMentor } from '../mentor-data/validation';
+import { hasUnsettledRedemptions, REDEMPTION_REFRESH_INTERVAL_MS } from './config';
 import type { CacheBindings, CacheConfig, CacheNamespace, CatalogSnapshot, Lease, PrivateSnapshot, SnapshotRow, SyncState } from './types';
 
 export class LostLease extends Error { constructor() { super('The synchronization lease is no longer current.'); } }
@@ -46,7 +47,9 @@ export async function publishSnapshots(db: D1Database, principal: Principal, lea
     const ttl = namespace === 'private' ? config.privateTtlMs : config.catalogTtlMs;
     statements.push(db.prepare(`INSERT INTO mentor_cache_snapshots (account_id,mentor_user_id,namespace,generation,snapshot_json,synced_at,refresh_after,hard_expires_at,invalidation_version) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM mentor_cache_sync_state WHERE account_id=? AND mentor_user_id=? AND lease_token=? AND commit_token=?) ON CONFLICT(account_id,mentor_user_id,namespace) DO UPDATE SET generation=excluded.generation,snapshot_json=excluded.snapshot_json,synced_at=excluded.synced_at,refresh_after=excluded.refresh_after,hard_expires_at=excluded.hard_expires_at,invalidation_version=excluded.invalidation_version`).bind(principal.accountId, principal.mentorUserId, namespace, crypto.randomUUID().replaceAll('-', ''), JSON.stringify(snapshot), now, now + ttl, now + config.hardAgeMs, lease.version, principal.accountId, principal.mentorUserId, lease.token, commit));
   }
-  statements.push(db.prepare("UPDATE mentor_cache_sync_state SET lease_token=NULL,lease_expires_at=0,commit_token=NULL,next_private_sync_at=CASE WHEN ? THEN ? ELSE next_private_sync_at END,next_catalog_sync_at=CASE WHEN ? THEN ? ELSE next_catalog_sync_at END,authorization_state='authorized',failure_count=0,last_error_code=NULL,updated_at=? WHERE account_id=? AND mentor_user_id=? AND lease_token=? AND commit_token=?").bind(snapshots.private ? 1 : 0, now + config.privateTtlMs, snapshots.catalog ? 1 : 0, now + config.catalogTtlMs, now, principal.accountId, principal.mentorUserId, lease.token, commit));
+  const privateData=snapshots.private as PrivateSnapshot|undefined;
+  const nextStatus = privateData && hasUnsettledRedemptions(privateData.redemptions) ? now + REDEMPTION_REFRESH_INTERVAL_MS : null;
+  statements.push(db.prepare("UPDATE mentor_cache_sync_state SET lease_token=NULL,lease_expires_at=0,commit_token=NULL,next_private_sync_at=CASE WHEN ? THEN ? ELSE next_private_sync_at END,next_catalog_sync_at=CASE WHEN ? THEN ? ELSE next_catalog_sync_at END,next_redemption_sync_at=CASE WHEN ? THEN ? ELSE next_redemption_sync_at END,authorization_state='authorized',failure_count=0,last_error_code=NULL,updated_at=? WHERE account_id=? AND mentor_user_id=? AND lease_token=? AND commit_token=?").bind(snapshots.private ? 1 : 0, now + config.privateTtlMs, snapshots.catalog ? 1 : 0, now + config.catalogTtlMs, snapshots.private ? 1 : 0, nextStatus, now, principal.accountId, principal.mentorUserId, lease.token, commit));
   const results = await db.batch(statements);
   return results[0].meta.changes === 1;
 }
@@ -54,15 +57,28 @@ export async function denyAccountCache(db: D1Database, principal: Principal, now
   await ensureState(db, principal, now);
   await db.batch([
     db.prepare('DELETE FROM mentor_cache_snapshots WHERE account_id=? AND mentor_user_id=?').bind(principal.accountId, principal.mentorUserId),
-    db.prepare("UPDATE mentor_cache_sync_state SET authorization_state='denied',lease_token=NULL,lease_expires_at=0,commit_token=NULL,invalidation_version=invalidation_version+1,next_private_sync_at=?,next_catalog_sync_at=?,failure_count=failure_count+1,last_error_code=?,updated_at=? WHERE account_id=? AND mentor_user_id=?").bind(retryAt, retryAt, code, now, principal.accountId, principal.mentorUserId),
+    db.prepare("UPDATE mentor_cache_sync_state SET authorization_state='denied',lease_token=NULL,lease_expires_at=0,commit_token=NULL,invalidation_version=invalidation_version+1,next_private_sync_at=?,next_catalog_sync_at=?,next_redemption_sync_at=NULL,failure_count=failure_count+1,last_error_code=?,updated_at=? WHERE account_id=? AND mentor_user_id=?").bind(retryAt, retryAt, code, now, principal.accountId, principal.mentorUserId),
   ]);
 }
 export async function recordSyncFailure(db: D1Database, principal: Principal, lease: Lease, namespaces: CacheNamespace[], now: number, retryAt: number, code: string): Promise<void> {
-  await db.prepare('UPDATE mentor_cache_sync_state SET lease_token=NULL,lease_expires_at=0,commit_token=NULL,next_private_sync_at=CASE WHEN ? THEN ? ELSE next_private_sync_at END,next_catalog_sync_at=CASE WHEN ? THEN ? ELSE next_catalog_sync_at END,failure_count=failure_count+1,last_error_code=?,updated_at=? WHERE account_id=? AND mentor_user_id=? AND lease_token=?').bind(namespaces.includes('private') ? 1 : 0, retryAt, namespaces.includes('catalog') ? 1 : 0, retryAt, code, now, principal.accountId, principal.mentorUserId, lease.token).run();
+  await db.prepare('UPDATE mentor_cache_sync_state SET lease_token=NULL,lease_expires_at=0,commit_token=NULL,next_private_sync_at=CASE WHEN ? THEN ? ELSE next_private_sync_at END,next_catalog_sync_at=CASE WHEN ? THEN ? ELSE next_catalog_sync_at END,next_redemption_sync_at=CASE WHEN ? AND next_redemption_sync_at IS NOT NULL THEN ? ELSE next_redemption_sync_at END,failure_count=failure_count+1,last_error_code=?,updated_at=? WHERE account_id=? AND mentor_user_id=? AND lease_token=?').bind(namespaces.includes('private') ? 1 : 0, retryAt, namespaces.includes('catalog') ? 1 : 0, retryAt, namespaces.includes('private') ? 1 : 0, retryAt, code, now, principal.accountId, principal.mentorUserId, lease.token).run();
 }
 export async function invalidateMentorCache(bindings: CacheBindings, principal: Principal): Promise<void> {
   const now = Date.now(); requireMentor(principal, 'live');
   await ensureState(bindings.DB, principal, now);
   // Fence in-flight work, retain last-good, and let only the background runner refresh it.
-  await bindings.DB.prepare('UPDATE mentor_cache_sync_state SET invalidation_version=invalidation_version+1,next_private_sync_at=?,next_catalog_sync_at=?,lease_token=NULL,lease_expires_at=0,commit_token=NULL,updated_at=? WHERE account_id=? AND mentor_user_id=?').bind(now, now, now, principal.accountId, principal.mentorUserId).run();
+  await bindings.DB.prepare('UPDATE mentor_cache_sync_state SET invalidation_version=invalidation_version+1,next_private_sync_at=?,next_catalog_sync_at=?,next_redemption_sync_at=NULL,lease_token=NULL,lease_expires_at=0,commit_token=NULL,updated_at=? WHERE account_id=? AND mentor_user_id=?').bind(now, now, now, principal.accountId, principal.mentorUserId).run();
+}
+export async function publishRedemptionStatus(db: D1Database, principal: Principal, lease: Lease, row: SnapshotRow, snapshot: PrivateSnapshot, now: number): Promise<boolean> {
+  const commit=crypto.randomUUID(), next=hasUnsettledRedemptions(snapshot.redemptions)?now+REDEMPTION_REFRESH_INTERVAL_MS:null;
+  const results=await db.batch([
+    db.prepare("UPDATE mentor_cache_sync_state SET commit_token=?,updated_at=? WHERE account_id=? AND mentor_user_id=? AND lease_token=? AND lease_expires_at>? AND invalidation_version=? AND authorization_state='authorized' AND next_private_sync_at>? AND EXISTS (SELECT 1 FROM auth_accounts WHERE id=? AND mentor_user_id=? AND mode='live' AND role='mentor' AND status='active') AND EXISTS (SELECT 1 FROM mentor_cache_snapshots WHERE account_id=? AND mentor_user_id=? AND namespace='private' AND generation=?)").bind(commit,now,principal.accountId,principal.mentorUserId,lease.token,now,lease.version,now,principal.accountId,principal.mentorUserId,principal.accountId,principal.mentorUserId,row.generation),
+    // Preserve all source-age and daily-refresh columns. Only confirmed financial DTOs change.
+    db.prepare("UPDATE mentor_cache_snapshots SET snapshot_json=?,generation=? WHERE account_id=? AND mentor_user_id=? AND namespace='private' AND generation=? AND EXISTS (SELECT 1 FROM mentor_cache_sync_state WHERE account_id=? AND mentor_user_id=? AND lease_token=? AND commit_token=?)").bind(JSON.stringify(snapshot),crypto.randomUUID().replaceAll('-',''),principal.accountId,principal.mentorUserId,row.generation,principal.accountId,principal.mentorUserId,lease.token,commit),
+    db.prepare("UPDATE mentor_cache_sync_state SET lease_token=NULL,lease_expires_at=0,commit_token=NULL,next_redemption_sync_at=?,failure_count=0,last_error_code=NULL,updated_at=? WHERE account_id=? AND mentor_user_id=? AND lease_token=? AND commit_token=?").bind(next,now,principal.accountId,principal.mentorUserId,lease.token,commit),
+  ]);
+  return results[0].meta.changes===1&&results[1].meta.changes===1;
+}
+export async function recordRedemptionRefreshFailure(db:D1Database,principal:Principal,lease:Lease,now:number,retryAt:number,code:string):Promise<void> {
+  await db.prepare('UPDATE mentor_cache_sync_state SET lease_token=NULL,lease_expires_at=0,commit_token=NULL,next_redemption_sync_at=?,failure_count=failure_count+1,last_error_code=?,updated_at=? WHERE account_id=? AND mentor_user_id=? AND lease_token=?').bind(retryAt,code,now,principal.accountId,principal.mentorUserId,lease.token).run();
 }

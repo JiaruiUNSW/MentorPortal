@@ -161,7 +161,7 @@ test('upload validates byte signature, extensions and HEIC/HEIF ftyp brands',asy
 });
 
 test('concurrent redemption retries reserve credit once and return pending with one successful audit',async()=>{
-  await seed();const reward=(await request('a','rewards.list')).body.data.items[0],key=uuid(),payload={rewardId:reward.id,optionIds:[],comment:'Preview test'};
+  await seed();const reward=(await request('a','rewards.list')).body.data.items[0],key=uuid(),payload={rewardId:reward.id,optionIds:[],comment:'Preview test',expectedPoints:reward.effectivePoints};
   const results=await Promise.all([request('a','redemptions.create',payload,key),request('a','redemptions.create',payload,key)]);
   assert.ok(results.some(r=>r.status===200));assert.ok(results.every(r=>[200,409].includes(r.status)));
   const replay=await request('a','redemptions.create',payload,key);assert.equal(replay.body.replayed,true);assert.equal(replay.body.data.redemption.status,'pending');assert.equal(replay.body.data.redemption.creditState,'reserved');
@@ -206,7 +206,7 @@ test('live read-only mode blocks every mutation before claims, file staging or o
     ['attachments.upload',{parentKind:'ticket',file:png}],
     ['attachments.delete',{parentKind:'ticket',parentId:'77',expectedVersion:'1',attachmentId:'file_1'}],
     ['profile.update',{expectedVersion:'1',country:'Australia',phoneNumber:'0400000000',communicationChannels:[],programs:[],stream:'',otherStream:'',under18:false,wwcc:'WWC1234567E',wwccExpiryDate:'2029-01-01'}],
-    ['redemptions.create',{rewardId:'8',optionIds:[],comment:'Test only'}],
+    ['redemptions.create',{rewardId:'8',optionIds:[],comment:'Test only',expectedPoints:40}],
     ['tickets.create',{title:'Test only',description:'Test only'}],
     ['tickets.update',{ticketId:'77',expectedVersion:'1',title:'Test only',description:'Test only'}],
   ];

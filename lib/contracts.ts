@@ -238,7 +238,7 @@ export interface OperationPayloads {
   'attachments.download': AttachmentParent & { attachmentId: string };
   'attachments.delete': AttachmentParent & { expectedVersion?: RecordVersion; attachmentId: string };
   'profile.update': { expectedVersion: RecordVersion; country: string; phoneNumber: string; communicationChannels: string[]; programs: string[]; stream: string; otherStream: string; under18: boolean; wwcc?: string; wwccExpiryDate?: DateOnly; dateOfBirth?: DateOnly };
-  'redemptions.create': { rewardId: Id; optionIds: Id[]; comment: string };
+  'redemptions.create': { rewardId: Id; optionIds: Id[]; comment: string; expectedPoints: number };
   'tickets.create': { title: string; description: string; attachmentIds?: string[] };
   'tickets.update': { ticketId: Id; expectedVersion: RecordVersion; title: string; description: string };
 }

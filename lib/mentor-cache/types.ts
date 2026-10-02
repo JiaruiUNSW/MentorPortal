@@ -27,6 +27,8 @@ export interface PrivateSnapshot {
   redemptions: OperationResults['redemptions.list']['items'];
   /** Known write acknowledgements; source timestamps stay unchanged until a full sync. */
   confirmedWrites?: Record<string, { requestId: string; completedAt: number }>;
+  /** Financial status refresh only; never advances profile/group freshness. */
+  redemptionStatusSyncedAt?: number;
 }
 export interface CatalogSnapshot {
   schemaVersion: 1;
@@ -52,6 +54,7 @@ export interface SyncState {
   invalidation_version: number;
   next_private_sync_at: number;
   next_catalog_sync_at: number;
+  next_redemption_sync_at: number | null;
   authorization_state: 'unknown' | 'authorized' | 'denied';
   failure_count: number;
   last_error_code: string | null;
@@ -86,7 +89,10 @@ export interface SyncResult {
   namespaces: CacheNamespace[];
   syncedAt?: string;
   errorCode?: string;
+  refreshKind?: 'redemption_status';
+  needsFullSync?: boolean;
 }
+export type RedemptionStatusSnapshot = Pick<PrivateSnapshot, 'balance' | 'transactions' | 'redemptions'>;
 export interface Lease {
   token: string;
   version: number;

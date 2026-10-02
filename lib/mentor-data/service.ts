@@ -8,6 +8,7 @@ import { fail, MentorError, safeError } from './errors';
 import { applyConfirmedWriteToCache, invalidateMentorCache, readCachedMentor } from '../mentor-cache';
 import { authorizeLiveParent, bytesAsUpload, fileDto, ownFile, ownFiles, projectLiveAttachments, removeObject, stageUpload, validateDemoFile, type FileRow } from './files';
 import { acquireResourceLocks, finishResourceLocks, markResourceDispatch, renewResourceLocks } from './resource-locks';
+import { requireCurrentRewardQuote, RewardQuoteConflict } from '../mentor-cache/reward-quote';
 
 /** Internal dependency injection only; request JSON cannot override timings or transport. */
 export interface LiveExecutionOptions { requestBudgetMs?: number; claimLeaseMs?: number; heartbeatMs?: number; fetcher?: typeof fetch }
@@ -160,6 +161,7 @@ async function writeLive(bindings:PortalBindings,principal:Principal,request:Cli
     return response;
   } else {
     await authorizeWriteResources(bindings,principal,request,live);
+    if(request.operation==='redemptions.create'&&!claim.resumingUpstreamPending) await requireCurrentRewardQuote(bindings,principal,request.payload as OperationPayloads['redemptions.create'],live.context);
     const {payload,staged}=await resolveLiveFiles(bindings,principal,request,live);
     response=await callFlow(bindings,principal,request,claim.row.request_id,payload,undefined,live.context);
     if(response.ok) {
@@ -267,7 +269,7 @@ export async function executeMentor(bindings:PortalBindings,principal:Principal,
     safe.requestId??=claim.row.request_id;
     try { await recordFailure(bindings.DB,claim,safe,uncertain); } catch { /* The pending lease remains durable and prevents an unsafe live resend. */ }
     if(mode==='live')await finishLocks(bindings,claim,uncertain?'uncertain':'safe_failure');
-    if(mode==='live' && bindings.MENTOR_CACHE_ENABLED==='true' && (uncertain || safe.code==='VERSION_CONFLICT')) {
+    if(mode==='live' && bindings.MENTOR_CACHE_ENABLED==='true' && (uncertain || (safe.code==='VERSION_CONFLICT' && !(error instanceof RewardQuoteConflict)))) {
       try {await invalidateMentorCache(bindings,principal);}catch{console.error('mentor_cache_invalidation_failed');}
     }
     throw safe;

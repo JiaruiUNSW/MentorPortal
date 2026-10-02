@@ -1,12 +1,12 @@
 import type { Principal } from '../runtime';
 import { MentorError, fail, safeError } from '../mentor-data/errors';
 import { requireMentor } from '../mentor-data/validation';
-import { cacheConfig, duration, syncLimits } from './config';
+import { cacheConfig, duration, SOURCE_AUTH_DENIALS, syncLimits } from './config';
 import { collectCatalog, collectPrivate, sourceReader } from './source';
 import { activeAccount, claimLease, denyAccountCache, LostLease, publishSnapshots, recordSyncFailure, releaseLease, stateFor } from './store';
 import type { CacheBindings, CacheNamespace, CatalogSnapshot, PrivateSnapshot, SyncOptions, SyncResult } from './types';
+import { refreshRedemptionStatus } from './redemption-refresh';
 
-const sourceDenials = new Set(['MENTOR_FORBIDDEN', 'OWNERSHIP_DENIED', 'BRIDGE_UNAUTHORIZED']);
 export async function syncMentorAccount(bindings: CacheBindings, principal: Principal, options: SyncOptions = {}): Promise<SyncResult> {
   const result = (status: SyncResult['status'], namespaces: CacheNamespace[] = [], errorCode?: string): SyncResult => ({ accountId: principal.accountId, mentorUserId: principal.mentorUserId, status, namespaces, ...(errorCode ? { errorCode } : {}) });
   requireMentor(principal, 'live');
@@ -42,7 +42,7 @@ export async function syncMentorAccount(bindings: CacheBindings, principal: Prin
   } catch (error) {
     if (error instanceof LostLease) { await releaseLease(bindings.DB, principal, lease, now()); return result('superseded', namespaces); }
     const safe = safeError(error);
-    if (error instanceof MentorError && sourceDenials.has(error.code)) {
+    if (error instanceof MentorError && SOURCE_AUTH_DENIALS.has(error.code)) {
       // A definitive source denial revokes even last-good data and fences any overlapping sync.
       await denyAccountCache(bindings.DB, principal, now(), now() + config.privateTtlMs, safe.code);
       return result('denied', namespaces, safe.code);
@@ -61,7 +61,7 @@ export async function runDueSync(bindings: CacheBindings, options: SyncOptions =
   const now = (options.now ?? Date.now)();
   const maximum = duration(options.maxAccounts, 20, 1, 100);
   const ids = [...config.allowedUserIds];
-  const rows = await bindings.DB.prepare(`SELECT a.id,a.email,a.display_name,a.mentor_user_id FROM auth_accounts a LEFT JOIN mentor_cache_sync_state s ON s.account_id=a.id AND s.mentor_user_id=a.mentor_user_id WHERE a.mode='live' AND a.role='mentor' AND a.status='active' AND a.mentor_user_id IN (${ids.map(() => '?').join(',')}) AND (? OR s.account_id IS NULL OR (? AND s.next_private_sync_at<=?) OR (? AND s.next_catalog_sync_at<=?)) AND (s.lease_expires_at IS NULL OR s.lease_expires_at<=?) ORDER BY min(coalesce(s.next_private_sync_at,0),coalesce(s.next_catalog_sync_at,0)),a.id LIMIT ?`).bind(...ids, options.force ? 1 : 0, namespaces.includes('private') ? 1 : 0, now, namespaces.includes('catalog') ? 1 : 0, now, now, maximum).all<{ id: string; email: string; display_name: string; mentor_user_id: number }>();
+  const rows = await bindings.DB.prepare(`SELECT a.id,a.email,a.display_name,a.mentor_user_id FROM auth_accounts a LEFT JOIN mentor_cache_sync_state s ON s.account_id=a.id AND s.mentor_user_id=a.mentor_user_id WHERE a.mode='live' AND a.role='mentor' AND a.status='active' AND a.mentor_user_id IN (${ids.map(() => '?').join(',')}) AND (? OR s.account_id IS NULL OR (? AND (s.next_private_sync_at<=? OR s.next_redemption_sync_at<=?)) OR (? AND s.next_catalog_sync_at<=?)) AND (s.lease_expires_at IS NULL OR s.lease_expires_at<=?) ORDER BY min(coalesce(s.next_private_sync_at,0),coalesce(s.next_catalog_sync_at,0),coalesce(s.next_redemption_sync_at,9007199254740991)),a.id LIMIT ?`).bind(...ids, options.force ? 1 : 0, namespaces.includes('private') ? 1 : 0, now, now, namespaces.includes('catalog') ? 1 : 0, now, now, maximum).all<{ id: string; email: string; display_name: string; mentor_user_id: number }>();
   const results: SyncResult[] = [];
   for (const row of rows.results) {
     const principal: Principal = { accountId: row.id, email: row.email, displayName: row.display_name, mentorUserId: row.mentor_user_id, role: 'mentor', mode: 'live' };
@@ -72,6 +72,17 @@ export async function runDueSync(bindings: CacheBindings, options: SyncOptions =
       const result = await syncMentorAccount(bindings, principal, { ...options, namespaces: [namespace] });
       results.push({ ...result, namespaces: [namespace] });
       if (['denied', 'not_allowed', 'disabled', 'busy'].includes(result.status)) break;
+      if(namespace==='private'&&result.status==='not_due') {
+        const status=await refreshRedemptionStatus(bindings,principal,options);
+        if(status.needsFullSync) {
+          const full=await syncMentorAccount(bindings,principal,{...options,namespaces:['private'],force:true});
+          results.push(full);
+          if(['denied','not_allowed','disabled','busy'].includes(full.status))break;
+        } else if(status.status!=='not_due') {
+          results.push(status);
+          if(['denied','not_allowed','disabled','busy'].includes(status.status))break;
+        }
+      }
     }
   }
   return { status: results.some(result => result.status === 'failed' || result.status === 'denied') ? 'partial' : 'ok', accountsChecked: rows.results.length, results };

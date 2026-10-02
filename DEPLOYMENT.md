@@ -118,11 +118,25 @@ docker compose --env-file .env.production up -d --force-recreate
 
 Recheck login and CSRF through the final HTTPS URL. Public DNS/TLS and visitor access are separate from a successful local health check.
 
+## USSO through the dedicated Authentik provider
+
+The confirmed USSO public origin is `https://mentor-portal.com`; its exact callback is `https://mentor-portal.com/api/auth/usso/callback`. The dedicated issuer is `https://login.jiarui.academy/application/o/mentor-portal/`. Follow [deploy/usso/README.md](deploy/usso/README.md) for the bounded provider setup, HTTPS metadata verification, private credential handoff and manual disable procedure. Creating the provider does not itself activate Portal login.
+
+Keep `MENTOR_USSO_ENABLED=false` until the dedicated provider credentials are privately installed and the reviewed Portal build is ready. Enable only its own `MENTOR_USSO_CLIENT_ID` and `MENTOR_USSO_CLIENT_SECRET`, with `MENTOR_USSO_ISSUER` set to the exact issuer above and `APP_ORIGIN=https://mentor-portal.com`. Never reuse IssueMesh or another application's credentials. Keep callback query strings out of reverse-proxy access logs.
+
+Existing Portal passwords and SharePoint User IDs remain unchanged. Users explicitly link USSO from their authenticated **Your account** dialog; administrators use **Account access**. A directory identity or matching email is not an automatic account-creation or access grant. To disable new USSO sign-ins, set `MENTOR_USSO_ENABLED=false` and recreate the web service; preserve the dedicated provider and account mappings until a separate removal decision.
+
 ## Synchronization and logs
 
 The worker polls every 30 seconds: private snapshots refresh after 24 hours, catalog after 48 hours. Normal source failures retain last-good data and schedule a 15-minute retry. At 72 hours old, the snapshot cannot be served. A definitive source authorization failure purges both namespaces for that account/User.ID, regardless of age.
 
-Page-data reads are local. Explicitly enabled writes still authorize against the source in real time and mark the cache due; cached history changes only after a complete successful refresh. Do not interpret a successful write followed by an older list as permission to submit the same mutation again.
+Page-data reads are local. Explicitly enabled writes still authorize against the source in real time; confirmed records become readable through the local cache while a complete refresh is queued for dependent summaries. An ambiguous result must be reconciled using its original request reference, not repeated under a new key.
+
+After migration `0005_redemption_status_refresh.sql`, unresolved Portal redemptions have a separate five-minute background check. It uses only the existing redemption, balance and transaction read operations (plus bounded pagination), preserving the daily profile/group collection and 48-hour catalog cadence. Original snapshot source age and the 72-hour maximum age do not advance on these targeted checks. Full private refresh takes precedence; a missing or stale snapshot is recollected normally. Approved+debited, rejected+refunded and needs_review stop routine status polling. Errors keep last-good values and retry after 15 minutes; source authorization denial removes the account's snapshots. During a long pending approval this is normally up to 864 logical read RPCs per account per day, plus pagination; ordinary browser reads make no upstream calls.
+
+Keep rollback images migration-compatible: once `0005` is applied, an image that lacks that exact migration file is refused by the storage adapter. Build a rollback image from the prior application code plus all applied migrations, and verify it on an isolated backup copy before a later status-refresh release.
+
+When an owner recovers a needs_review redemption, queue or force one full **private** synchronization afterward using the helper rebuilt from the currently deployed source. The complete refresh discovers processing status and re-arms five-minute checks. Do not reuse an older bundled helper that omits `next_redemption_sync_at`; no new public/browser refresh endpoint is needed.
 
 ```sh
 docker compose --env-file .env.production logs --tail=100 web sync

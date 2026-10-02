@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+# The existing Oracle Linux origin tunnel uses this fixed shell-to-SSH entry
+# point under SELinux. No command arguments, app environment or secrets enter it.
+exec /usr/bin/ssh -NT -F /etc/mentor-portal/origin-tunnel/ssh_config mentor-portal-npm-tunnel

@@ -21,6 +21,10 @@
 # misc
 .DS_Store
 *.pem
+# Public Cloudflare Origin CA trust roots used by the bounded proxy verifier.
+!/deploy/reverse-proxy/ca/cloudflare-origin-ca.pem
+!/deploy/reverse-proxy/ca/origin_ca_rsa_root.pem
+!/deploy/reverse-proxy/ca/origin_ca_ecc_root.pem
 
 # debug
 npm-debug.log*

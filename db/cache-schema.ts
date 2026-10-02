@@ -28,6 +28,7 @@ export const mentorCacheSyncState = sqliteTable('mentor_cache_sync_state', {
   invalidationVersion: integer('invalidation_version').notNull().default(0),
   nextPrivateSyncAt: integer('next_private_sync_at').notNull().default(0),
   nextCatalogSyncAt: integer('next_catalog_sync_at').notNull().default(0),
+  nextRedemptionSyncAt: integer('next_redemption_sync_at'),
   authorizationState: text('authorization_state', { enum: ['unknown', 'authorized', 'denied'] }).notNull().default('unknown'),
   failureCount: integer('failure_count').notNull().default(0),
   lastErrorCode: text('last_error_code'),
@@ -37,6 +38,7 @@ export const mentorCacheSyncState = sqliteTable('mentor_cache_sync_state', {
   primaryKey({ columns: [table.accountId, table.mentorUserId] }),
   index('mentor_cache_private_due').on(table.nextPrivateSyncAt),
   index('mentor_cache_catalog_due').on(table.nextCatalogSyncAt),
+  index('mentor_cache_redemption_due').on(table.nextRedemptionSyncAt),
   check('mentor_cache_authorization_state', sql`${table.authorizationState} IN ('unknown','authorized','denied')`),
   check('mentor_cache_sync_mentor', sql`${table.mentorUserId} > 0`),
 ]);
