@@ -84,7 +84,13 @@ export async function callFlow(bindings: PortalBindings, principal: Principal, r
   const controller = new AbortController(); const deadline = setTimeout(()=>controller.abort(), isWrite(request.operation) ? 20000:45000);
   let response: Response;
   try {
-    response = await fetcher(endpoint,{method:'POST',headers,body:JSON.stringify(envelope),redirect:'error',signal:controller.signal});
+    // This Worker runtime supports manual redirects, but rejects redirect:error
+    // before dispatch. Never follow a redirect carrying the bridge credential.
+    response = await fetcher(endpoint,{method:'POST',headers,body:JSON.stringify(envelope),redirect:'manual',signal:controller.signal});
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel();
+      throw new Error('Live adapter redirect rejected');
+    }
     const body = await readBoundedJson(response,request.operation === 'attachments.download' ? 8*1024*1024 : 1024*1024) as Record<string,unknown>;
     if (!body || body.schemaVersion !== '1.0' || body.requestId !== requestId || typeof body.ok !== 'boolean') throw new Error('invalid envelope');
     if (!body.ok) {
