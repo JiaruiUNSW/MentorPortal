@@ -1,6 +1,6 @@
 import type { Operation, OperationPayloads, OperationResults } from "@/lib/contracts";
 import type { Principal } from "@/lib/runtime";
-export type Session = { user: Principal | null; mode: "demo" | "live"; csrfToken: string; readOnly?: boolean };
+export type Session = { user: Principal | null; mode: "demo" | "live"; csrfToken: string; readOnly?: boolean; usso?: { enabled: boolean; linked: boolean } };
 let csrfToken = "";
 export class PortalError extends Error {
   constructor(message: string, public code = "REQUEST_FAILED", public requestId?: string) { super(message); this.name = "PortalError"; }
@@ -23,6 +23,7 @@ export async function requestJson<T>(path: string, body?: unknown, retry = true)
 }
 export function readSession() { return requestJson<Session>("/api/auth/session"); }
 export function authenticate(kind: "login" | "demo" | "activate" | "setup" | "logout", payload: unknown) { return requestJson<Session>(`/api/auth/${kind}`, payload); }
+export function startUsso(intent: "login" | "link") { return requestJson<{ authorizationUrl: string }>("/api/auth/usso/start", { intent }); }
 export async function mentorRequest<O extends Operation>(operation: O, payload: OperationPayloads[O], idempotencyKey?: string): Promise<OperationResults[O]> {
   const result = await requestJson<{ ok: boolean; data: OperationResults[O]; error?: { code: string; message: string }; requestId: string }>("/api/mentor", { operation, payload, ...(idempotencyKey ? { idempotencyKey } : {}) });
   if (!result.ok) throw new PortalError(result.error?.message || "The request was not saved.", result.error?.code, result.requestId);

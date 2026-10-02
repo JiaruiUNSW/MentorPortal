@@ -3,6 +3,7 @@ import { consumePasswordWork, hashPassword, hashToken, randomToken, secretEqual,
 import { AuthError } from "./errors";
 import { applicationOrigin, checkCsrf, checkOrigin, cookieNames, csrfForToken, getCookie, requestSource, setCookie } from "./security";
 import { emailInput, identifierInput, invalid, mentorIdInput, nameInput, passwordInput, readAuthJson } from "./validation";
+import { USSO_CALLBACK_PATH, USSO_TRANSACTION_SECONDS, ussoAuthorizationUrl, ussoConfiguration, verifyUssoCallback, type OidcTransaction, type UssoConfiguration, type UssoSettings } from "./oidc";
 
 type Mode = Principal["mode"];
 interface AccountRow {
@@ -38,6 +39,8 @@ interface ServiceOptions {
   trustProxy?: boolean;
   setupToken?: string;
   liveWritesEnabled?: boolean;
+  usso?: UssoSettings;
+  ussoFetch?: typeof fetch;
   now?: () => number;
 }
 type SessionContext = { principal: Principal; token: string; tokenHash: string };
@@ -58,6 +61,8 @@ export class AuthService {
   private readonly trustProxy: boolean;
   private readonly setupToken?: string;
   private readonly clock: () => number;
+  private readonly usso: UssoConfiguration | null;
+  private readonly ussoFetch: typeof fetch;
 
   constructor(db: D1Database, options: ServiceOptions) {
     this.db = db;
@@ -67,6 +72,8 @@ export class AuthService {
     this.trustProxy = options.trustProxy === true;
     this.setupToken = options.setupToken;
     this.clock = options.now ?? Date.now;
+    this.usso = options.mode === "live" ? ussoConfiguration(options.usso) : null;
+    this.ussoFetch = options.ussoFetch ?? fetch;
   }
 
   json(value: unknown, status = 200, cookies: string[] = []): Response {
@@ -114,9 +121,14 @@ export class AuthService {
   async session(request: Request): Promise<Response> {
     applicationOrigin(request, this.appOrigin);
     const context = await this.sessionContext(request);
-    if (context) return this.json({ user: context.principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(context.token) });
+    if (context) return this.json(await this.sessionPayload(context.principal, await csrfForToken(context.token)));
     const token = getCookie(request, cookieNames(request, this.appOrigin).csrf) ?? randomToken();
-    return this.json({ user: null, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(token), error: { code: "UNAUTHENTICATED", message: "Please sign in to continue." } }, 401, [setCookie(request, "csrf", token, 3600, this.appOrigin), setCookie(request, "session", "", 0, this.appOrigin)]);
+    return this.json({ ...await this.sessionPayload(null, await csrfForToken(token)), error: { code: "UNAUTHENTICATED", message: "Please sign in to continue." } }, 401, [setCookie(request, "csrf", token, 3600, this.appOrigin), setCookie(request, "session", "", 0, this.appOrigin)]);
+  }
+
+  private async sessionPayload(user: Principal | null, csrfToken: string) {
+    const linked = Boolean(user && this.usso && await this.db.prepare("SELECT subject FROM auth_oidc_identities WHERE issuer = ? AND account_id = ?").bind(this.usso.issuer, user.accountId).first());
+    return { user, mode: this.mode, readOnly: this.readOnly, csrfToken, usso: { enabled: Boolean(this.usso), linked } };
   }
 
   private async rateLimit(request: Request, action: string, limit: number, windowSeconds: number, email?: string): Promise<void> {
@@ -144,7 +156,7 @@ export class AuthService {
     statements.push(this.db.prepare(`DELETE FROM auth_sessions WHERE token_hash IN (SELECT token_hash FROM auth_sessions WHERE expires_at < ? LIMIT 100)`).bind(now - 24 * 3600 * 1000));
     const results = await this.db.batch(statements);
     if (results[0].meta.changes !== 1) throw UNAUTHENTICATED();
-    return this.json({ user: principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(token) }, status, [setCookie(request, "session", token, maxAge, this.appOrigin), setCookie(request, "csrf", "", 0, this.appOrigin)]);
+    return this.json(await this.sessionPayload(principal, await csrfForToken(token)), status, [setCookie(request, "session", token, maxAge, this.appOrigin), setCookie(request, "csrf", "", 0, this.appOrigin)]);
   }
 
   async login(request: Request): Promise<Response> {
@@ -165,7 +177,7 @@ export class AuthService {
     await this.requireMutationProtection(request);
     await readAuthJson(request, []);
     const current = await this.sessionContext(request);
-    if (current?.principal.role === "mentor") return this.json({ user: current.principal, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(current.token) });
+    if (current?.principal.role === "mentor") return this.json(await this.sessionPayload(current.principal, await csrfForToken(current.token)));
     await this.rateLimit(request, "demo", 20, 3600);
     const accountId = crypto.randomUUID();
     const principal: Principal = { accountId, email: `preview.${accountId}@example.invalid`, displayName: "Alex Morgan", mentorUserId: 1, role: "mentor", mode: "demo" };
@@ -179,7 +191,95 @@ export class AuthService {
     const token = getCookie(request, cookieNames(request, this.appOrigin).session);
     if (token) await this.db.prepare(`UPDATE auth_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL`).bind(this.clock(), await hashToken(token)).run();
     const csrf = randomToken();
-    return this.json({ user: null, mode: this.mode, readOnly: this.readOnly, csrfToken: await csrfForToken(csrf) }, 200, [setCookie(request, "session", "", 0, this.appOrigin), setCookie(request, "csrf", csrf, 3600, this.appOrigin)]);
+    return this.json(await this.sessionPayload(null, await csrfForToken(csrf)), 200, [setCookie(request, "session", "", 0, this.appOrigin), setCookie(request, "csrf", csrf, 3600, this.appOrigin)]);
+  }
+
+  private ussoCookieName(request: Request): string {
+    return cookieNames(request, this.appOrigin).secure ? "__Host-mentor_usso" : "mentor_usso_dev";
+  }
+
+  private ussoCookie(request: Request, value: string, maxAge: number): string {
+    const secure = cookieNames(request, this.appOrigin).secure;
+    return `${this.ussoCookieName(request)}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+  }
+
+  async ussoStart(request: Request): Promise<Response> {
+    await this.requireMutationProtection(request);
+    if (!this.usso) throw new AuthError(503, "USSO_UNAVAILABLE", "USSO is not available. Please use your portal password.");
+    const body = await readAuthJson(request, ["intent"]);
+    if (body.intent !== "login" && body.intent !== "link") return invalid("Choose sign-in or account linking.");
+    const context = body.intent === "link" ? await this.sessionContext(request) : null;
+    if (body.intent === "link" && !context) throw UNAUTHENTICATED();
+    await this.rateLimit(request, "usso-start", 10, 15 * 60, context?.principal.accountId);
+    const now = this.clock();
+    const state = randomToken(), browser = randomToken();
+    const transaction: Pick<OidcTransaction, "redirect_uri" | "nonce" | "code_verifier" | "intent"> = { redirect_uri: `${applicationOrigin(request, this.appOrigin)}${USSO_CALLBACK_PATH}`, nonce: randomToken(), code_verifier: randomToken(), intent: body.intent };
+    const authorizationUrl = await ussoAuthorizationUrl(this.usso, transaction, state, this.ussoFetch);
+    await this.db.batch([
+      this.db.prepare("DELETE FROM auth_oidc_transactions WHERE expires_at <= ?").bind(now),
+      this.db.prepare("INSERT INTO auth_oidc_transactions (state_hash,browser_hash,issuer,client_id,redirect_uri,intent,nonce,code_verifier,account_id,session_hash,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(await hashToken(state), await hashToken(browser), this.usso.issuer, this.usso.clientId, transaction.redirect_uri, transaction.intent, transaction.nonce, transaction.code_verifier, context?.principal.accountId ?? null, context?.tokenHash ?? null, now, now + USSO_TRANSACTION_SECONDS * 1000),
+    ]);
+    return this.json({ authorizationUrl }, 200, [this.ussoCookie(request, browser, USSO_TRANSACTION_SECONDS)]);
+  }
+
+  private ussoRedirect(request: Request, path: string, session?: Response, clearTransaction = true): Response {
+    const headers = new Headers(session?.headers ?? { "Cache-Control": "no-store", "Pragma": "no-cache", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" });
+    headers.delete("Content-Type");
+    headers.set("Location", `${applicationOrigin(request, this.appOrigin)}${path}`);
+    if (clearTransaction) headers.append("Set-Cookie", this.ussoCookie(request, "", 0));
+    return new Response(null, { status: 303, headers });
+  }
+
+  private async requireLinkSession(request: Request, transaction: OidcTransaction): Promise<SessionContext> {
+    const context = await this.sessionContext(request);
+    if (!context || context.principal.accountId !== transaction.account_id || context.tokenHash !== transaction.session_hash) {
+      throw new AuthError(401, "USSO_LINK_SESSION_EXPIRED", "Sign in to the original portal account and start linking again.");
+    }
+    return context;
+  }
+
+  async ussoCallback(request: Request): Promise<Response> {
+    let consumed = false;
+    try {
+      if (!this.usso) throw new AuthError(503, "USSO_UNAVAILABLE", "USSO is unavailable.");
+      const incoming = new URL(request.url);
+      const states = incoming.searchParams.getAll("state");
+      const browser = getCookie(request, this.ussoCookieName(request));
+      if (incoming.pathname !== USSO_CALLBACK_PATH || states.length !== 1 || !/^[A-Za-z0-9_-]{43}$/.test(states[0]) || !browser) throw new AuthError(400, "USSO_STATE_INVALID", "The sign-in request has expired. Please start again.");
+      const state = states[0];
+      // DELETE RETURNING consumes a browser-bound transaction once, including failed callbacks.
+      const transaction = await this.db.prepare("DELETE FROM auth_oidc_transactions WHERE state_hash = ? AND browser_hash = ? AND expires_at > ? RETURNING *").bind(await hashToken(state), await hashToken(browser), this.clock()).first<OidcTransaction>();
+      consumed = Boolean(transaction);
+      if (!transaction || transaction.issuer !== this.usso.issuer || transaction.client_id !== this.usso.clientId || transaction.redirect_uri !== `${applicationOrigin(request, this.appOrigin)}${USSO_CALLBACK_PATH}`) throw new AuthError(400, "USSO_STATE_INVALID", "The sign-in request has expired. Please start again.");
+      if (transaction.intent === "link") await this.requireLinkSession(request, transaction);
+      const callbackUrl = new URL(transaction.redirect_uri);
+      callbackUrl.search = incoming.search;
+      const identity = await verifyUssoCallback(this.usso, transaction, callbackUrl, state, this.ussoFetch);
+      let principal: Principal;
+      if (transaction.intent === "link") {
+        const context = await this.requireLinkSession(request, transaction);
+        const now = this.clock();
+        await this.db.prepare(`INSERT INTO auth_oidc_identities (issuer,subject,account_id,created_at)
+          SELECT ?,?,a.id,? FROM auth_accounts a JOIN auth_sessions s ON s.account_id=a.id
+          WHERE a.id=? AND a.status='active' AND a.mode='live' AND s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>?
+          ON CONFLICT DO NOTHING`).bind(identity.issuer, identity.subject, now, context.principal.accountId, context.tokenHash, now).run();
+        const linked = await this.db.prepare("SELECT account_id FROM auth_oidc_identities WHERE issuer=? AND subject=?").bind(identity.issuer, identity.subject).first<{ account_id: string }>();
+        if (linked?.account_id !== context.principal.accountId) throw new AuthError(409, "USSO_LINK_CONFLICT", "This USSO identity or portal account is already linked. Contact the portal administrator.");
+        await this.requireLinkSession(request, transaction);
+        principal = context.principal;
+      } else {
+        const account = await this.db.prepare("SELECT a.* FROM auth_oidc_identities i JOIN auth_accounts a ON a.id=i.account_id WHERE i.issuer=? AND i.subject=? AND a.mode='live' AND a.status='active'").bind(identity.issuer, identity.subject).first<AccountRow>();
+        if (!account) throw new AuthError(401, "USSO_UNMAPPED", "Sign in once with your portal password, then link USSO from Your account.");
+        principal = principalFromRow(account);
+      }
+      const response = await this.finishLogin(request, principal);
+      return this.ussoRedirect(request, `${principal.role === "admin" ? "/manage" : "/"}${transaction.intent === "link" ? "?usso=linked" : ""}`, response);
+    } catch (error) {
+      const code = error instanceof AuthError ? error.code : "USSO_UNAVAILABLE";
+      const result = code === "USSO_UNMAPPED" ? "unmapped" : code === "USSO_LINK_CONFLICT" ? "link-conflict" : code === "USSO_LINK_SESSION_EXPIRED" ? "link-session-expired" : code === "USSO_STATE_INVALID" ? "expired" : code === "USSO_UNAVAILABLE" ? "unavailable" : "failed";
+      // Never echo provider errors, callback parameters, claims or tokens into URLs or logs.
+      return this.ussoRedirect(request, `/login?usso=${result}`, undefined, consumed);
+    }
   }
 
   async setup(request: Request): Promise<Response> {

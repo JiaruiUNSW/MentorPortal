@@ -1,6 +1,6 @@
 import type { AttachmentDto, ClientRequest, GroupDto, OperationPayloads, ReportDto, ExpenseDto, TicketDto, UploadFile } from '../contracts';
 import type { PortalBindings, Principal } from '../runtime';
-import { callFlow, configuredEndpoint } from '../flow-bridge';
+import { callFlow, configuredEndpoint, type FlowCallContext } from '../flow-bridge';
 import { fail } from './errors';
 import { type DemoState, validateFileParent } from './demo';
 import { expectVersion, parseUpload } from './validation';
@@ -22,18 +22,19 @@ export function validateDemoFile(state: DemoState, file: FileRow): void {
   const {parent} = validateFileParent(state,fileDto(file));
   if (parent && !parent.attachments.some(a=>a.id===file.id)) fail('RECORD_NOT_FOUND','The attachment is no longer linked to this record.',404);
 }
-export async function authorizeLiveParent(bindings: PortalBindings, principal: Principal, target: Pick<AttachmentDto,'parentKind'|'parentId'|'groupId'>, expectedVersion?: string, editing=false): Promise<{parent?: ReportDto|ExpenseDto|TicketDto;groupId?:string}> {
-  if (!target.parentId && target.parentKind==='ticket') { if(target.groupId) fail('VALIDATION_ERROR','Ticket attachments cannot target a group.'); await callFlow(bindings,principal,{operation:'profile.get',payload:{}},crypto.randomUUID()); return {}; }
+export async function authorizeLiveParent(bindings: PortalBindings, principal: Principal, target: Pick<AttachmentDto,'parentKind'|'parentId'|'groupId'>, expectedVersion?: string, editing=false, context?: FlowCallContext): Promise<{parent?: ReportDto|ExpenseDto|TicketDto;groupId?:string}> {
+  const read = (request: ClientRequest) => callFlow(bindings,principal,request,crypto.randomUUID(),undefined,undefined,context);
+  if (!target.parentId && target.parentKind==='ticket') { if(target.groupId) fail('VALIDATION_ERROR','Ticket attachments cannot target a group.'); await read({operation:'profile.get',payload:{}}); return {}; }
   let parent: ReportDto|ExpenseDto|TicketDto|undefined, groupId=target.groupId;
   if(target.parentKind==='ticket') {
-    const response=await callFlow(bindings,principal,{operation:'tickets.get',payload:{ticketId:target.parentId!}},crypto.randomUUID());
+    const response=await read({operation:'tickets.get',payload:{ticketId:target.parentId!}});
     if(!response.ok) fail('OWNERSHIP_DENIED','The ticket is unavailable.',403);
     parent=(response.data as {ticket:TicketDto}).ticket;
     if(parent.id!==target.parentId) fail('OWNERSHIP_DENIED','The ticket is unavailable.',403);
     if(editing && parent.status==='Closed') fail('EDIT_NOT_ALLOWED','Closed tickets cannot be edited.',403);
   } else {
     if(target.parentId && target.parentKind==='meetupReport') {
-      const response=await callFlow(bindings,principal,{operation:'reports.get',payload:{kind:'meetup',reportId:target.parentId}},crypto.randomUUID());
+      const response=await read({operation:'reports.get',payload:{kind:'meetup',reportId:target.parentId}});
       if(!response.ok) fail('OWNERSHIP_DENIED','The report is unavailable.',403);
       parent=(response.data as {report:ReportDto}).report;
       if(parent.id!==target.parentId || parent.kind!=='meetup') fail('OWNERSHIP_DENIED','The report is unavailable.',403);
@@ -41,7 +42,7 @@ export async function authorizeLiveParent(bindings: PortalBindings, principal: P
       groupId=parent.groupId;
     }
     if(!groupId) fail('OWNERSHIP_DENIED','An owned group is required.',403);
-    const response=await callFlow(bindings,principal,{operation:'groups.get',payload:{groupId}},crypto.randomUUID());
+    const response=await read({operation:'groups.get',payload:{groupId}});
     if(!response.ok) fail('OWNERSHIP_DENIED','The group is unavailable.',403);
     const detail=response.data as {group:GroupDto;expenses:ExpenseDto[]};
     if(detail.group.id!==groupId) fail('OWNERSHIP_DENIED','The group is unavailable.',403);

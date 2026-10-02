@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from "@/lib/utils";
 import { ErrorNotice, Initials } from "./ui";
 import { useMentorReadOnly, useSession } from "./session";
+import { UssoAccountLink, UssoResultNotice } from "./usso-account";
 
 export const navigation = [
   { id: "groups", label: "My Groups", icon: UsersRound },
@@ -85,6 +86,7 @@ export function PortalShell({ active, navigate, children }: { active: View; navi
       {preview ? <span className="preview-label">Preview data</span> : null}
     </header>
     <main id="main-content" className="portal-main" tabIndex={-1}>
+      <UssoResultNotice />
       {preview ? <span className="desktop-preview preview-label" title="All people and records in this preview are synthetic.">Preview data</span> : null}
       {readOnly ? <p className="portal-access-note" role="status">Read-only access · Submissions are not enabled yet.</p> : null}
       {children}
@@ -92,6 +94,7 @@ export function PortalShell({ active, navigate, children }: { active: View; navi
     <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
       <DialogContent><DialogHeader><DialogTitle>Your account</DialogTitle><DialogDescription>{session?.user?.email}</DialogDescription></DialogHeader>
         <p>Signed in as {name}.</p>{preview ? <p className="muted">This private preview uses synthetic people and records.</p> : null}
+        <UssoAccountLink />
         <ErrorNotice error={error} />
         <div className="form-actions"><Button variant="outline" onClick={() => { setAccountOpen(false); navigate("profile"); }}>My Profile</Button><Button onClick={signOut} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</Button></div>
       </DialogContent>

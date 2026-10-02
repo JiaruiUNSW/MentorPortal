@@ -25,6 +25,8 @@ export interface PrivateSnapshot {
   transactions: OperationResults['transactions.list']['items'];
   tickets: OperationResults['tickets.get']['ticket'][];
   redemptions: OperationResults['redemptions.list']['items'];
+  /** Known write acknowledgements; source timestamps stay unchanged until a full sync. */
+  confirmedWrites?: Record<string, { requestId: string; completedAt: number }>;
 }
 export interface CatalogSnapshot {
   schemaVersion: 1;

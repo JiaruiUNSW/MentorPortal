@@ -14,9 +14,9 @@ export async function sha256(value: string | Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
 }
 export interface RequestRow {
-  account_id: string; mode: string; idempotency_key: string; request_id: string; operation: string; payload_hash: string; state: string; lease_token: string; lease_expires_at: number; response_json: string | null;
+  account_id: string; mode: string; idempotency_key: string; request_id: string; operation: string; payload_hash: string; state: string; lease_token: string; lease_expires_at: number; response_json: string | null; updated_at: number;
 }
-export interface Claim { row: RequestRow; lease: string; replay?: BridgeResponse }
+export interface Claim { row: RequestRow; lease: string; replay?: BridgeResponse; resumingUpstreamPending?: boolean }
 export async function claimRequest(db: D1Database, principal: Principal, request: ClientRequest, requestId: string): Promise<Claim> {
   if (!request.idempotencyKey) fail('VALIDATION_ERROR', 'A change requires an idempotency key.');
   const hash = await sha256(canonicalJson({ operation: request.operation, payload: request.payload }));
@@ -29,12 +29,12 @@ export async function claimRequest(db: D1Database, principal: Principal, request
   if (row.response_json && ['succeeded', 'failed'].includes(row.state)) return { row, lease: row.lease_token, replay: { ...JSON.parse(row.response_json), replayed: true } };
   if (row.state === 'uncertain' || (principal.mode === 'live' && row.state === 'pending' && row.lease_expires_at <= now)) fail('PARTIAL_WRITE', 'The previous attempt needs reconciliation. Keep this request reference and contact staff before repeating the change.', 409, false, row.request_id);
   if (row.lease_expires_at > now) fail('REQUEST_IN_PROGRESS', 'This request is still being processed. Retry with the same key.', 409, true, row.request_id);
-  if (principal.mode === 'live' && row.state === 'upstream_pending') {
+  if (principal.mode === 'live' && ['upstream_pending', 'preflight_retry'].includes(row.state)) {
     // A previous explicit adapter acknowledgement permits a user-initiated status recheck with the same key.
     // Transport timeouts remain uncertain and never enter this branch.
-    const checked = await db.prepare("UPDATE mentor_requests SET state='pending',lease_token=?,lease_expires_at=?,updated_at=? WHERE account_id=? AND mode='live' AND idempotency_key=? AND state='upstream_pending' AND lease_expires_at<=?").bind(lease,now+45000,now,principal.accountId,request.idempotencyKey,now).run();
+    const checked = await db.prepare("UPDATE mentor_requests SET state='pending',lease_token=?,lease_expires_at=?,updated_at=? WHERE account_id=? AND mode='live' AND idempotency_key=? AND state=? AND lease_expires_at<=?").bind(lease,now+45000,now,principal.accountId,request.idempotencyKey,row.state,now).run();
     if (checked.meta.changes !== 1) fail('REQUEST_IN_PROGRESS','This request is still being processed. Retry with the same key.',409,true,row.request_id);
-    return {row:{...row,state:'pending',lease_token:lease,lease_expires_at:now+45000},lease};
+    return {row:{...row,state:'pending',lease_token:lease,lease_expires_at:now+45000},lease,resumingUpstreamPending:row.state==='upstream_pending'};
   }
   // Only demo computation may be retried. Every commit also verifies this lease, so an old worker cannot commit afterward.
   const reclaimed = await db.prepare('UPDATE mentor_requests SET lease_token=?,lease_expires_at=?,updated_at=? WHERE account_id=? AND mode=? AND idempotency_key=? AND state=\'pending\' AND lease_expires_at<=?').bind(lease, now + 45000, now, principal.accountId, principal.mode, request.idempotencyKey, now).run();
@@ -66,10 +66,22 @@ export async function completeDemo(db: D1Database, claim: Claim, revision: numbe
 }
 export async function completeLive(db: D1Database, claim: Claim, response: BridgeResponse): Promise<void> {
   const r = claim.row, now = Date.now();
-  await db.batch([
-    db.prepare('UPDATE mentor_requests SET state=\'succeeded\',response_json=?,updated_at=? WHERE account_id=? AND mode=\'live\' AND idempotency_key=? AND lease_token=? AND state=\'pending\'').bind(JSON.stringify(response), now, r.account_id, r.idempotency_key, claim.lease),
+  const results = await db.batch([
+    db.prepare('UPDATE mentor_requests SET state=\'succeeded\',response_json=?,updated_at=? WHERE account_id=? AND mode=\'live\' AND idempotency_key=? AND lease_token=? AND state=\'pending\' AND lease_expires_at>?').bind(JSON.stringify(response), now, r.account_id, r.idempotency_key, claim.lease, now),
     db.prepare('INSERT INTO mentor_audit (id,account_id,mode,request_id,operation,outcome,created_at) SELECT ?,?,\'live\',?,?,\'succeeded\',? WHERE EXISTS (SELECT 1 FROM mentor_requests WHERE account_id=? AND mode=\'live\' AND idempotency_key=? AND lease_token=? AND state=\'succeeded\')').bind(crypto.randomUUID(), r.account_id, r.request_id, r.operation, now, r.account_id, r.idempotency_key, claim.lease),
   ]);
+  if (results[0].meta.changes !== 1) fail('PARTIAL_WRITE', 'The write claim changed before completion. Keep this request reference for reconciliation.', 409, false, r.request_id);
+  r.updated_at = now;
+}
+export async function renewLiveClaim(db: D1Database, claim: Claim, expiresAt: number): Promise<void> {
+  const r = claim.row, now = Date.now();
+  const result = await db.prepare("UPDATE mentor_requests SET lease_expires_at=? WHERE account_id=? AND mode='live' AND idempotency_key=? AND lease_token=? AND state='pending' AND lease_expires_at>?").bind(expiresAt,r.account_id,r.idempotency_key,claim.lease,now).run();
+  if (result.meta.changes !== 1) fail('PARTIAL_WRITE', 'The write claim is no longer current. Keep this request reference for reconciliation.', 409, false, r.request_id);
+}
+/** Only a failure before any local mutation or upstream business dispatch may enter this state. */
+export async function recordPreflightRetry(db: D1Database, claim: Claim): Promise<void> {
+  const r=claim.row,now=Date.now();
+  await db.prepare("UPDATE mentor_requests SET state='preflight_retry',response_json=NULL,lease_expires_at=?,updated_at=? WHERE account_id=? AND mode='live' AND idempotency_key=? AND lease_token=? AND state='pending'").bind(now+3000,now,r.account_id,r.idempotency_key,claim.lease).run();
 }
 export async function recordFailure(db: D1Database, claim: Claim, error: unknown, uncertain = false): Promise<void> {
   const r = claim.row, now = Date.now();

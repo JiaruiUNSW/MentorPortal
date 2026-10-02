@@ -39,7 +39,7 @@ before(async()=>{
           globalThis.fetch=async(url,init)=>{
             flowCalls++;
             const sent=JSON.parse(init.body),p=sent.payload,base={schemaVersion:'1.0',requestId:sent.requestId};
-            if(action==='mock-transport')throw new Error('private upstream transport details');
+            if(action==='mock-transport' && sent.operation==='tickets.create')throw new Error('private upstream transport details');
             if(action==='mock-deny' && ['tickets.get','reports.get','groups.get'].includes(sent.operation))return Response.json({...base,ok:false,error:{code:'OWNERSHIP_DENIED',message:'Private upstream text',retryable:false}},{status:403});
             const ticket={id:77,version:'1',title:'Live fixture ticket',description:'Mock adapter test only',status:'Open',staffName:'',staffComment:'',createdAt:'2026-09-30T00:00:00Z',modifiedAt:'2026-09-30T00:00:00Z',attachments:[]};
             if(sent.operation==='balance.get')return Response.json({...base,ok:true,data:{balance:5,totalCredit:10,roundCount:1,milestone:20,milestoneRound:3}});
@@ -81,7 +81,7 @@ before(async()=>{
   for(const file of (await readdir('drizzle')).filter(f=>f.endsWith('.sql')).sort())for(const sql of (await readFile(`drizzle/${file}`,'utf8')).split('--> statement-breakpoint').map(v=>v.trim()).filter(Boolean))await database.prepare(sql).run();
 });
 after(async()=>{await runtime?.dispose();});
-beforeEach(async()=>{await database.batch(['mentor_demo_state','mentor_requests','mentor_files','mentor_audit'].map(t=>database.prepare(`DELETE FROM ${t}`)));});
+beforeEach(async()=>{await database.batch(['mentor_resource_locks','mentor_demo_state','mentor_requests','mentor_files','mentor_audit'].map(t=>database.prepare(`DELETE FROM ${t}`)));});
 // Test-only actors are set by the harness; production obtains them exclusively from requireSession.
 async function request<O extends Operation>(account:string,operation:O,payload:unknown={},key?:string,mode='demo',action='run'){
   const response=await runtime.dispatchFetch(`https://test.invalid/${mode}/${account}/${action}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({operation,payload,...(key?{idempotencyKey:key}:{})})});
@@ -291,7 +291,7 @@ test('uncertain live writes retain the original recovery reference and are never
   const key=uuid(),payload={title:'Unknown outcome',description:'Transport ambiguity test'};
   const initial=await request('live-unknown','tickets.create',payload,key,'live','mock-transport');assert.equal(initial.body.error?.code,'PARTIAL_WRITE');assert.equal(initial.body.error?.retryable,false);
   const repeated=await request('live-unknown','tickets.create',payload,key,'live','mock-ok');assert.equal(repeated.body.error?.code,'PARTIAL_WRITE');assert.equal(repeated.body.requestId,initial.body.requestId);
-  const count=await database.prepare('SELECT count(*) AS n FROM mentor_audit WHERE account_id=? AND outcome=\'live_dispatch\'').bind('live-unknown').first<{n:number}>();assert.equal(count?.n,1);
+  const count=await database.prepare('SELECT count(*) AS n FROM mentor_audit WHERE account_id=? AND operation=\'tickets.create\' AND outcome=\'live_dispatch\'').bind('live-unknown').first<{n:number}>();assert.equal(count?.n,1);
 });
 
 function attachmentMetadata(value:unknown):Array<{id:string;fileName:string;parentId:number|string}> {

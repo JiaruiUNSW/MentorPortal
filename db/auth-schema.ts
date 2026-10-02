@@ -63,3 +63,32 @@ export const authRateLimits = sqliteTable("auth_rate_limits", {
   hits: integer("hits").notNull(),
   expiresAt: integer("expires_at").notNull(),
 }, (table) => [index("auth_rate_limits_expiry").on(table.expiresAt)]);
+
+export const authOidcIdentities = sqliteTable("auth_oidc_identities", {
+  issuer: text("issuer").notNull(),
+  subject: text("subject").notNull(),
+  accountId: text("account_id").notNull().references(() => authAccounts.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("auth_oidc_identity_subject").on(table.issuer, table.subject),
+  uniqueIndex("auth_oidc_identity_account").on(table.issuer, table.accountId),
+]);
+
+export const authOidcTransactions = sqliteTable("auth_oidc_transactions", {
+  stateHash: text("state_hash").primaryKey(),
+  browserHash: text("browser_hash").notNull(),
+  issuer: text("issuer").notNull(),
+  clientId: text("client_id").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  intent: text("intent", { enum: ["login", "link"] }).notNull(),
+  nonce: text("nonce").notNull(),
+  codeVerifier: text("code_verifier").notNull(),
+  accountId: text("account_id").references(() => authAccounts.id, { onDelete: "cascade" }),
+  sessionHash: text("session_hash"),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+}, (table) => [
+  index("auth_oidc_transaction_expiry").on(table.expiresAt),
+  check("auth_oidc_transaction_intent", sql`${table.intent} IN ('login', 'link')`),
+  check("auth_oidc_transaction_link", sql`(${table.intent} = 'login' AND ${table.accountId} IS NULL AND ${table.sessionHash} IS NULL) OR (${table.intent} = 'link' AND ${table.accountId} IS NOT NULL AND ${table.sessionHash} IS NOT NULL)`),
+]);

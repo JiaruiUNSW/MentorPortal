@@ -9,7 +9,7 @@ export const mentorDemoState = sqliteTable('mentor_demo_state', {
   updatedAt: integer('updated_at').notNull(),
 });
 
-/** The unique key is the atomic claim; leases are only recoverable for demo writes. */
+/** The unique key claims one intent; ambiguous live writes are never reclaimed by lease expiry. */
 export const mentorRequests = sqliteTable('mentor_requests', {
   accountId: text('account_id').notNull(),
   mode: text('mode').notNull(),
@@ -24,6 +24,17 @@ export const mentorRequests = sqliteTable('mentor_requests', {
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [primaryKey({ columns: [t.accountId, t.mode, t.idempotencyKey] })]);
+
+/** Portal-only serialization; a dispatched/uncertain source write needs reconciliation. */
+export const mentorResourceLocks = sqliteTable('mentor_resource_locks', {
+  resourceKey: text('resource_key').primaryKey(),
+  requestId: text('request_id').notNull(),
+  ownerAccountId: text('owner_account_id').notNull(),
+  leaseToken: text('lease_token').notNull(),
+  leaseExpiresAt: integer('lease_expires_at').notNull(),
+  state: text('state', { enum: ['pending', 'dispatched', 'uncertain'] }).notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [index('mentor_resource_request').on(t.requestId)]);
 
 export const mentorFiles = sqliteTable('mentor_files', {
   id: text('id').primaryKey(),

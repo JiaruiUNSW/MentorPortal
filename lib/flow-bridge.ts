@@ -6,6 +6,16 @@ import { validateFlowData } from './mentor-data/response-validation';
 import { canonicalJson, sha256 } from './mentor-data/store';
 
 const read = new Set(['bootstrap','groups.list','groups.get','reports.list','reports.get','balance.get','transactions.list','rewards.list','rewards.get','profile.get','tickets.list','tickets.get','redemptions.list']);
+export const LIVE_WRITE_BUDGET_MS = 85_000;
+/** Shared by preflight reads and the one write dispatch; never populated from browser input. */
+export interface FlowCallContext {
+  deadlineAt: number;
+  signal?: AbortSignal;
+  fetcher?: typeof fetch;
+  readMemo?: Map<string, Promise<BridgeResponse>>;
+  beforeDispatch?: (operation: Operation) => Promise<void>;
+  onWriteDispatch?: () => void;
+}
 export function bindingForOperation(operation: Operation): keyof PortalBindings {
   if (read.has(operation)) return 'MENTOR_READ_URL';
   if (operation === 'attendance.save') return 'MENTOR_ATTENDANCE_URL';
@@ -58,11 +68,18 @@ export async function readBoundedJson(response: Response, maxBytes: number): Pro
   const all = new Uint8Array(size); let offset=0; for (const chunk of chunks) {all.set(chunk,offset);offset+=chunk.length;}
   try { return JSON.parse(new TextDecoder().decode(all)); } catch { fail('UPSTREAM_UNAVAILABLE','The data service returned an invalid response.',502); }
 }
-export async function callFlow(bindings: PortalBindings, principal: Principal, request: ClientRequest, requestId: string, resolvedPayload?: Record<string, unknown>, fetcher: typeof fetch = fetch): Promise<BridgeResponse> {
+export async function callFlow(bindings: PortalBindings, principal: Principal, request: ClientRequest, requestId: string, resolvedPayload?: Record<string, unknown>, fetcher: typeof fetch = fetch, context?: FlowCallContext): Promise<BridgeResponse> {
   // This guard is independent of routing. Demo data can never be forwarded accidentally.
   if (bindings.PORTAL_MODE === 'demo') fail('MENTOR_FORBIDDEN','Preview requests cannot use the live data bridge.',403);
   requireMentor(principal,'live');
   requireLiveWriteAccess(bindings,request.operation);
+  if (!isWrite(request.operation) && context?.readMemo) {
+    const key=canonicalJson({operation:request.operation,payload:request.payload});
+    const previous=context.readMemo.get(key);
+    if(previous) {await context.beforeDispatch?.(request.operation);return previous;}
+    const pending=callFlow(bindings,principal,request,requestId,resolvedPayload,fetcher,{...context,readMemo:undefined});
+    context.readMemo.set(key,pending);return pending;
+  }
   const endpoint = configuredEndpoint(bindings,request.operation), payload = normalizeLivePayload(request,resolvedPayload);
   const now = Date.now();
   const rate = await bindings.DB.prepare("INSERT INTO mentor_audit (id,account_id,mode,request_id,operation,outcome,created_at) SELECT ?,?,'live',?,?,'live_dispatch',? WHERE (SELECT COUNT(*) FROM mentor_audit WHERE account_id=? AND mode='live' AND outcome='live_dispatch' AND created_at>?)<60").bind(crypto.randomUUID(),principal.accountId,requestId,request.operation,now,principal.accountId,now-60000).run();
@@ -81,12 +98,18 @@ export async function callFlow(bindings: PortalBindings, principal: Principal, r
       headers['X-Mentor-Files-Validated-SHA256'] = digest;
     }
   }
-  const controller = new AbortController(); const deadline = setTimeout(()=>controller.abort(), isWrite(request.operation) ? 20000:45000);
+  await context?.beforeDispatch?.(request.operation);
+  const remaining = Math.min(isWrite(request.operation) ? LIVE_WRITE_BUDGET_MS : 45_000, context ? context.deadlineAt - Date.now() : Infinity);
+  if (remaining <= 0 || context?.signal?.aborted) fail('UPSTREAM_UNAVAILABLE', 'The request budget expired before dispatch. Retry with the same request key.', 503, true);
+  const controller = new AbortController(); const deadline = setTimeout(()=>controller.abort(), remaining);
+  const abort = () => controller.abort();
+  context?.signal?.addEventListener('abort', abort, { once: true });
   let response: Response;
   try {
     // This Worker runtime supports manual redirects, but rejects redirect:error
     // before dispatch. Never follow a redirect carrying the bridge credential.
-    response = await fetcher(endpoint,{method:'POST',headers,body:JSON.stringify(envelope),redirect:'manual',signal:controller.signal});
+    if (isWrite(request.operation)) context?.onWriteDispatch?.();
+    response = await (context?.fetcher ?? fetcher)(endpoint,{method:'POST',headers,body:JSON.stringify(envelope),redirect:'manual',signal:controller.signal});
     if (response.status >= 300 && response.status < 400) {
       await response.body?.cancel();
       throw new Error('Live adapter redirect rejected');
@@ -104,6 +127,6 @@ export async function callFlow(bindings: PortalBindings, principal: Principal, r
   } catch (error) {
     if (error instanceof MentorError && error.code !== 'UPSTREAM_UNAVAILABLE') throw error;
     if (isWrite(request.operation)) fail('PARTIAL_WRITE','The request outcome is unknown. Keep this request reference and contact staff before repeating the change.',409,false);
-    fail('UPSTREAM_UNAVAILABLE','The live data service is temporarily unavailable.',503,true);
-  } finally { clearTimeout(deadline); }
+    return fail('UPSTREAM_UNAVAILABLE','The live data service is temporarily unavailable.',503,true);
+  } finally { clearTimeout(deadline); context?.signal?.removeEventListener('abort', abort); }
 }

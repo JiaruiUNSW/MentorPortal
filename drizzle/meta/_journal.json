@@ -22,6 +22,20 @@
       "when": 1790929464211,
       "tag": "0002_romantic_zombie",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790958357287,
+      "tag": "0003_usso_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790959183221,
+      "tag": "0004_mentor_resource_locks",
+      "breakpoints": true
     }
   ]
 }
