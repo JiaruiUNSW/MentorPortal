@@ -25,6 +25,7 @@ Edit `.env.production` privately. Never commit it or print resolved secret-beari
 | `PORTAL_HTTP_PORT` | `3100`; Compose binds only `127.0.0.1` |
 | `TRUST_PROXY` | `false` for the tunnel test |
 | `MENTOR_LIVE_WRITES_ENABLED` | `false` |
+| `MENTOR_REDEEM_ENABLED` | Optional; `false` pauses new reward requests independently, unset/`true` preserves existing behavior |
 | `MENTOR_CACHE_ENABLED` | `true`; keep enabled for page reads to stay local |
 | `MENTOR_CACHE_PRIVATE_TTL_HOURS` | `24` |
 | `MENTOR_CACHE_CATALOG_TTL_HOURS` | `48` |
@@ -37,6 +38,8 @@ Edit `.env.production` privately. Never commit it or print resolved secret-beari
 The server sets `DATA_DIR=/data` and `MIGRATIONS_DIR=/app/drizzle` inside both containers. Other operation-specific `MENTOR_*_URL` settings remain private and are needed only for the corresponding reviewed live paths. Do not enable live writes merely to test installation.
 
 Do not disable `MENTOR_CACHE_ENABLED` for this deployment: `false` selects the retained legacy direct-HTTP read path.
+
+After the corresponding live paths have been verified, ordinary editing can be enabled with `MENTOR_LIVE_WRITES_ENABLED=true` while keeping `MENTOR_REDEEM_ENABLED=false`. The redemption pause rejects new reward requests before creating a local write claim or calling a Flow. Reward browsing, request history, background status collection and already-running external approvals continue. The explicit pause also applies in demo mode; it does not change credit calculation or approval semantics. Deploy this code before setting the new flag, then recreate `web` with the updated private environment (a container restart alone does not apply changed Compose environment values). Refresh the browser session to update its displayed capability. Restoring the flag to `true` or removing it permits redemption only when the existing global live-write gate also permits it.
 
 The local ID allowlist and upstream authorization must both admit the pilot. The current source Flow does not permit all external mentors. Do not replace that source check with a broad local allowlist.
 

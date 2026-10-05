@@ -19,3 +19,5 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 }
 export function useSession() { const context = useContext(SessionContext); if (!context) throw new Error("SessionProvider is required."); return context; }
 export function useMentorReadOnly() { const { session } = useSession(); return session?.mode === 'live' && session.readOnly !== false; }
+/** Independent maintenance switch; callers must still honor the global readOnly flag. */
+export function useMentorRedeemEnabled() { const { session } = useSession(); return session?.redeemEnabled !== false; }

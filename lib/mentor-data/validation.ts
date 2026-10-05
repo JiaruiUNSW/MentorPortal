@@ -54,6 +54,9 @@ export function requireLiveWriteAccess(bindings: PortalBindings, operation: Oper
   if (bindings.PORTAL_MODE !== 'demo' && isWrite(operation) && bindings.MENTOR_LIVE_WRITES_ENABLED !== 'true') {
     fail('DRAFT_NOT_CONFIGURED', 'The portal is read-only while its data connection is being verified. Changes are not enabled yet.', 503, false);
   }
+  if (operation === 'redemptions.create' && bindings.MENTOR_REDEEM_ENABLED === 'false') {
+    fail('DRAFT_NOT_CONFIGURED', 'Reward requests are temporarily unavailable. You can still browse rewards and view existing requests.', 503, false);
+  }
 }
 export function parseClientRequest(input: unknown): ClientRequest {
   const top = z.object({ operation: z.string(), payload: z.unknown(), idempotencyKey: z.string().uuid().optional() }).strict().safeParse(input);

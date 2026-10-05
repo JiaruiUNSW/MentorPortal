@@ -6,7 +6,7 @@ export { AuthError };
 
 function service(): AuthService {
   const bindings = getBindings();
-  return new AuthService(getRawDb(), { mode: getPortalMode(), appOrigin: bindings.APP_ORIGIN, trustProxy: bindings.TRUST_PROXY === 'true', setupToken: bindings.SETUP_TOKEN, liveWritesEnabled: bindings.MENTOR_LIVE_WRITES_ENABLED === 'true', usso: { enabled: bindings.MENTOR_USSO_ENABLED === "true", issuer: bindings.MENTOR_USSO_ISSUER, clientId: bindings.MENTOR_USSO_CLIENT_ID, clientSecret: bindings.MENTOR_USSO_CLIENT_SECRET } });
+  return new AuthService(getRawDb(), { mode: getPortalMode(), appOrigin: bindings.APP_ORIGIN, trustProxy: bindings.TRUST_PROXY === 'true', setupToken: bindings.SETUP_TOKEN, liveWritesEnabled: bindings.MENTOR_LIVE_WRITES_ENABLED === 'true', redeemEnabled: bindings.MENTOR_REDEEM_ENABLED !== 'false', usso: { enabled: bindings.MENTOR_USSO_ENABLED === "true", issuer: bindings.MENTOR_USSO_ISSUER, clientId: bindings.MENTOR_USSO_CLIENT_ID, clientSecret: bindings.MENTOR_USSO_CLIENT_SECRET } });
 }
 
 export function requireSession(request: Request): Promise<Principal> {

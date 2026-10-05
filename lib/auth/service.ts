@@ -39,6 +39,7 @@ interface ServiceOptions {
   trustProxy?: boolean;
   setupToken?: string;
   liveWritesEnabled?: boolean;
+  redeemEnabled?: boolean;
   usso?: UssoSettings;
   ussoFetch?: typeof fetch;
   now?: () => number;
@@ -57,6 +58,7 @@ export class AuthService {
   private readonly db: D1Database;
   readonly mode: Mode;
   readonly readOnly: boolean;
+  readonly redeemEnabled: boolean;
   private readonly appOrigin?: string;
   private readonly trustProxy: boolean;
   private readonly setupToken?: string;
@@ -68,6 +70,7 @@ export class AuthService {
     this.db = db;
     this.mode = options.mode;
     this.readOnly = options.mode === 'live' && options.liveWritesEnabled !== true;
+    this.redeemEnabled = options.redeemEnabled !== false;
     this.appOrigin = options.appOrigin;
     this.trustProxy = options.trustProxy === true;
     this.setupToken = options.setupToken;
@@ -128,7 +131,7 @@ export class AuthService {
 
   private async sessionPayload(user: Principal | null, csrfToken: string) {
     const linked = Boolean(user && this.usso && await this.db.prepare("SELECT subject FROM auth_oidc_identities WHERE issuer = ? AND account_id = ?").bind(this.usso.issuer, user.accountId).first());
-    return { user, mode: this.mode, readOnly: this.readOnly, csrfToken, usso: { enabled: Boolean(this.usso), linked } };
+    return { user, mode: this.mode, readOnly: this.readOnly, redeemEnabled: this.redeemEnabled, csrfToken, usso: { enabled: Boolean(this.usso), linked } };
   }
 
   private async rateLimit(request: Request, action: string, limit: number, windowSeconds: number, email?: string): Promise<void> {
