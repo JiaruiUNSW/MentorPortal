@@ -20,7 +20,6 @@ export interface PortalBindings {
   MENTOR_CACHE_PRIVATE_TTL_HOURS?: string;
   MENTOR_CACHE_CATALOG_TTL_HOURS?: string;
   MENTOR_CACHE_MAX_STALE_HOURS?: string;
-  MENTOR_SYNC_ALLOWED_USER_IDS?: string;
   MENTOR_USSO_ENABLED?: string;
   MENTOR_USSO_ISSUER?: string;
   MENTOR_USSO_CLIENT_ID?: string;

@@ -77,7 +77,7 @@ before(async () => {
         export default {async fetch(request,env) {
           const input=await request.json(),account=input.account||${JSON.stringify(ACCOUNT_A)},actor=input.actor||1;
           const principal={accountId:account,email:'mentor'+actor+'@example.test',displayName:'Synthetic mentor '+actor,mentorUserId:actor,role:'mentor',mode:'live'};
-          const bindings={...env,PORTAL_MODE:'live',MENTOR_CACHE_ENABLED:'true',MENTOR_SYNC_ALLOWED_USER_IDS:'1,2',MENTOR_READ_URL:'https://cache-fixture.logic.azure.com/read',MENTOR_BRIDGE_KEY:'synthetic-cache-test-key-with-at-least-32-characters',...(input.bindings||{})};
+          const bindings={...env,PORTAL_MODE:'live',MENTOR_CACHE_ENABLED:'true',MENTOR_READ_URL:'https://cache-fixture.logic.azure.com/read',MENTOR_BRIDGE_KEY:'synthetic-cache-test-key-with-at-least-32-characters',...(input.bindings||{})};
           try {
             if(input.action==='reset'){controls.clear();calls.length=0;sourceLogs.length=0;held=false;releaseHold=undefined;return Response.json({ok:true});}
             if(input.action==='control'){controls.set(account,input.control||{});return Response.json({ok:true});}
@@ -119,7 +119,7 @@ async function sync(extra: Record<string, unknown> = {}) {
   const result = await command<SyncResult>({ action: 'sync', ...extra });
   assert.equal(result.status,200,JSON.stringify(result.body)); return result.body;
 }
-async function stats() { return (await command<{calls: {operation:string;account:string;payload:Record<string,unknown>}[];held:boolean;sourceLogs:Record<string,unknown>[]}>({action:'stats'})).body; }
+async function stats() { return (await command<{calls: {operation:string;account:string;actor:number;payload:Record<string,unknown>}[];held:boolean;sourceLogs:Record<string,unknown>[]}>({action:'stats'})).body; }
 function data<O extends Operation>(response: { body: BridgeResponse<O> }): OperationResults[O] { assert.equal(response.body.ok,true,JSON.stringify(response.body));if(!response.body.ok)throw new Error('Expected cached data');return response.body.data; }
 function code(response: { body: BridgeResponse }): string | undefined { return response.body.ok ? undefined : response.body.error.code; }
 
@@ -216,11 +216,29 @@ test('expired persisted lease recovers after restart while fresh leases are resp
   assert.equal((await sync()).status,'synced');
 });
 
-test('due runner honors active-account allowlist and returns partial status for source failure', async () => {
-  const result=await command<DueSyncResult>({action:'due',bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'1'},options:{maxAccounts:2}});assert.equal(result.body.status,'ok');assert.equal(result.body.accountsChecked,1);assert.equal(result.body.results.length,2);assert.ok(result.body.results.every(item=>item.accountId===ACCOUNT_A));assert.deepEqual(result.body.results.map(item=>item.namespaces),[['private'],['catalog']]);
-  assert.equal(code(await cached('bootstrap',{},ACCOUNT_B,2)),'CACHE_PENDING');
+test('due runner ignores the obsolete pilot setting and returns partial status for source failure', async () => {
+  const result=await command<DueSyncResult>({action:'due',bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'1'},options:{maxAccounts:2}});assert.equal(result.body.status,'ok');assert.equal(result.body.accountsChecked,2);assert.equal(result.body.results.length,4);assert.deepEqual(new Set(result.body.results.map(item=>item.accountId)),new Set([ACCOUNT_A,ACCOUNT_B]));assert.deepEqual(result.body.results.map(item=>item.namespaces),[['private'],['catalog'],['private'],['catalog']]);
+  assert.equal(data(await cached('bootstrap',{},ACCOUNT_B,2)).mentor.id,'2');
   await command({action:'control',control:{failOperation:'bootstrap'}});await command({action:'invalidate'});
   const failed=await command<DueSyncResult>({action:'due',bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'1'}});assert.equal(failed.body.status,'partial');assert.equal(failed.body.results[0].status,'failed');
+});
+
+test('a newly activated Mentor 148 synchronizes without a list while disabled, demo and admin accounts are excluded', async () => {
+  const newcomer='cccccccc-cccc-4ccc-8ccc-cccccccccccc',disabled='dddddddd-dddd-4ddd-8ddd-dddddddddddd',demo='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',admin='ffffffff-ffff-4fff-8fff-ffffffffffff';
+  for(const [id,actor,mode,role,status]of [[newcomer,148,'live','mentor','active'],[disabled,149,'live','mentor','disabled'],[demo,150,'demo','mentor','active'],[admin,0,'live','admin','active']]as const)await database.prepare('INSERT INTO auth_accounts (id,email,display_name,mentor_user_id,role,mode,status,created_at) VALUES (?,?,?,?,?,?,?,?)').bind(id,`synthetic-${actor}-${mode}@example.test`,'Synthetic account',actor,role,mode,status,Date.now()).run();
+  assert.equal(await database.prepare('SELECT COUNT(*) AS n FROM mentor_cache_sync_state WHERE account_id=?').bind(newcomer).first<number>('n'),0);
+  const result=await command<DueSyncResult>({action:'due'});assert.equal(result.body.status,'ok');assert.equal(result.body.accountsChecked,3);
+  assert.deepEqual(new Set(result.body.results.map(item=>item.accountId)),new Set([ACCOUNT_A,ACCOUNT_B,newcomer]));const newcomerCalls=(await stats()).calls.filter(item=>item.account===newcomer);assert.ok(newcomerCalls.length>0);assert.ok(newcomerCalls.every(item=>item.actor===148));
+  assert.equal(data(await cached('bootstrap',{},newcomer,148)).mentor.id,'148');assert.equal(await database.prepare('SELECT COUNT(*) AS n FROM mentor_cache_snapshots WHERE account_id=?').bind(newcomer).first<number>('n'),2);
+  for(const id of [disabled,demo,admin])assert.equal(await database.prepare('SELECT COUNT(*) AS n FROM mentor_cache_sync_state WHERE account_id=?').bind(id).first<number>('n'),0);
+  const before=(await stats()).calls.length;assert.equal((await sync({account:newcomer,actor:147,options:{force:true}})).status,'denied');assert.equal((await stats()).calls.length,before);assert.equal(data(await cached('bootstrap',{},newcomer,148)).mentor.id,'148');
+});
+
+test('one-off Mentor selection uses existing active mappings and cannot become an authorization bypass',async()=>{
+  const newcomer='cccccccc-cccc-4ccc-8ccc-cccccccccccc';await database.prepare("INSERT INTO auth_accounts (id,email,display_name,mentor_user_id,role,mode,status,created_at) VALUES (?,?,?,148,'mentor','live','active',?)").bind(newcomer,'synthetic-new@example.test','Synthetic new Mentor',Date.now()).run();
+  const result=await command<DueSyncResult>({action:'due',bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'obsolete-invalid-value'},options:{mentorUserId:148,force:true}});assert.equal(result.body.status,'ok');assert.equal(result.body.accountsChecked,1);assert.ok(result.body.results.every(item=>item.accountId===newcomer));assert.equal(data(await cached('bootstrap',{},newcomer,148)).mentor.id,'148');
+  assert.equal(code(await cached('bootstrap')),'CACHE_PENDING');await database.prepare("UPDATE auth_accounts SET status='disabled' WHERE id=?").bind(newcomer).run();const before=(await stats()).calls.length;assert.equal((await command<DueSyncResult>({action:'due',options:{mentorUserId:148,force:true}})).body.accountsChecked,0);assert.equal((await stats()).calls.length,before);assert.equal(code(await cached('bootstrap',{},newcomer,148)),'MENTOR_FORBIDDEN');
+  assert.equal(code(await command<BridgeResponse>({action:'due',options:{mentorUserId:0}})),'VALIDATION_ERROR');
 });
 
 test('catalog can refresh independently without publishing personal credit or changing the private generation', async () => {
@@ -234,7 +252,7 @@ test('catalog can refresh independently without publishing personal credit or ch
 test('an account mapping change never reuses the old Mentor snapshot', async () => {
   await sync();await database.prepare('UPDATE auth_accounts SET mentor_user_id=3 WHERE id=?').bind(ACCOUNT_A).run();const before=(await stats()).calls.length;
   assert.equal(code(await cached('bootstrap')),'MENTOR_FORBIDDEN');
-  const rebound=await command<BridgeResponse<'bootstrap'>>({action:'read',operation:'bootstrap',account:ACCOUNT_A,actor:3,bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'1,2,3'}});assert.equal(code(rebound),'CACHE_PENDING');assert.equal((await stats()).calls.length,before);
+  const rebound=await command<BridgeResponse<'bootstrap'>>({action:'read',operation:'bootstrap',account:ACCOUNT_A,actor:3});assert.equal(code(rebound),'CACHE_PENDING');assert.equal((await stats()).calls.length,before);
 });
 
 test('a reclaimed lease fences an older still-running synchronization', async () => {
@@ -264,8 +282,8 @@ test('source failures log only fixed correlation fields without source text or r
 
 test('production due runner publishes complete private data even when the cold catalog sync fails', async () => {
   await command({action:'control',control:{failOperation:'rewards.list'}});
-  const result=await command<DueSyncResult>({action:'due',bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'1'}});
-  assert.equal(result.body.status,'partial');assert.equal(result.body.accountsChecked,1);assert.deepEqual(result.body.results.map(item=>[item.namespaces[0],item.status]),[['private','synced'],['catalog','failed']]);
+  const result=await command<DueSyncResult>({action:'due'});
+  assert.equal(result.body.status,'partial');assert.equal(result.body.accountsChecked,2);assert.deepEqual(result.body.results.filter(item=>item.accountId===ACCOUNT_A).map(item=>[item.namespaces[0],item.status]),[['private','synced'],['catalog','failed']]);
   assert.equal(data(await cached('bootstrap')).mentor.id,'1');assert.equal(data(await cached('balance.get')).balance,101);assert.equal(data(await cached('groups.get',{groupId:'10'})).reports.length,2);assert.equal(code(await cached('rewards.list')),'CACHE_PENDING');
 });
 

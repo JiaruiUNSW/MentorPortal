@@ -31,7 +31,6 @@ Edit `.env.production` privately. Never commit it or print resolved secret-beari
 | `MENTOR_CACHE_PRIVATE_TTL_HOURS` | `24` |
 | `MENTOR_CACHE_CATALOG_TTL_HOURS` | `48` |
 | `MENTOR_CACHE_MAX_STALE_HOURS` | `72`, absolute age since successful synchronization |
-| `MENTOR_SYNC_ALLOWED_USER_IDS` | Required approved SharePoint `User.ID` list; blank means nobody is admitted |
 | `MENTOR_BRIDGE_KEY`, `MENTOR_READ_URL` | Supply the approved bridge secret and signed read endpoint privately |
 | `MENTOR_ATTACHMENT_URL` | Supply the reviewed attachment endpoint if live downloads are required |
 | `PORTAL_IMAGE_TAG` | Prefer an immutable reviewed commit/release tag; defaults to `local` |
@@ -42,7 +41,9 @@ Do not disable `MENTOR_CACHE_ENABLED` for this deployment: `false` selects the r
 
 After the corresponding live paths have been verified, ordinary editing can be enabled with `MENTOR_LIVE_WRITES_ENABLED=true` while keeping `MENTOR_REDEEM_ENABLED=false`. The redemption pause rejects new reward requests before creating a local write claim or calling a Flow. Reward browsing, request history, background status collection and already-running external approvals continue. The explicit pause also applies in demo mode; it does not change credit calculation or approval semantics. Deploy this code before setting the new flag, then recreate `web` with the updated private environment (a container restart alone does not apply changed Compose environment values). Refresh the browser session to update its displayed capability. Restoring the flag to `true` or removing it permits redemption only when the existing global live-write gate also permits it.
 
-The local ID allowlist and upstream authorization must both admit the pilot. The current source Flow does not permit all external mentors. Do not replace that source check with a broad local allowlist.
+Synchronization discovers every active live Mentor account from the account database and uses its exact stored SharePoint `User.ID`. There is no application pilot list. Disabled, demo and administrator accounts are excluded, and the source adapter must still authorize each mapped Mentor and its records. The obsolete `MENTOR_SYNC_ALLOWED_USER_IDS` environment value is ignored and may be removed from the private deployment configuration.
+
+For a one-off refresh of an existing account, the bundled worker supports `node standalone-dist/sync-worker.mjs --once --force --mentor-id <SharePointUserID>`. The selector only narrows this operator run; it cannot create an account, change its mapping or bypass active-account/source authorization. The continuous worker always discovers all eligible accounts.
 
 ## 2. Build
 

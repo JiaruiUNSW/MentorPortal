@@ -23,13 +23,7 @@ export function cacheConfig(bindings: CacheBindings): CacheConfig {
   const catalogTtlMs = hours(bindings.MENTOR_CACHE_CATALOG_TTL_HOURS, 48);
   const hardAgeMs = hours(bindings.MENTOR_CACHE_MAX_STALE_HOURS, 72);
   if (privateTtlMs > hardAgeMs || catalogTtlMs > hardAgeMs) fail('DRAFT_NOT_CONFIGURED', 'Cache refresh intervals cannot exceed the maximum snapshot age.', 503);
-  const allowedUserIds = new Set<number>();
-  for (const value of (bindings.MENTOR_SYNC_ALLOWED_USER_IDS ?? '').split(/[\s,]+/).filter(Boolean)) {
-    if (!/^[1-9]\d{0,9}$/.test(value) || Number(value) > 2_147_483_647) fail('DRAFT_NOT_CONFIGURED', 'The background synchronization allowlist is invalid.', 503);
-    allowedUserIds.add(Number(value));
-  }
-  if (allowedUserIds.size > 1000) fail('DRAFT_NOT_CONFIGURED', 'The synchronization allowlist exceeds its supported bound.', 503);
-  return { enabled: bindings.MENTOR_CACHE_ENABLED === 'true', privateTtlMs, catalogTtlMs, hardAgeMs, allowedUserIds };
+  return { enabled: bindings.MENTOR_CACHE_ENABLED === 'true', privateTtlMs, catalogTtlMs, hardAgeMs };
 }
 export const DEFAULT_LIMITS: SyncLimits = {
   maxPages: 40, maxListItems: 2000, maxGroups: 100, maxTickets: 500,

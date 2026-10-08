@@ -23,7 +23,7 @@ export async function refreshRedemptionStatus(bindings:CacheBindings,principal:P
   requireMentor(principal,'live');
   const config=cacheConfig(bindings),now=options.now??Date.now;
   if(!config.enabled)return result('disabled');
-  if(bindings.PORTAL_MODE==='demo'||!config.allowedUserIds.has(principal.mentorUserId))return result('not_allowed');
+  if(bindings.PORTAL_MODE==='demo')return result('not_allowed');
   if(!await activeAccount(bindings,principal)){await denyAccountCache(bindings.DB,principal,now(),now()+config.privateTtlMs,'MENTOR_FORBIDDEN');return result('denied','MENTOR_FORBIDDEN');}
   const previous=await stateFor(bindings.DB,principal);
   if(previous?.authorization_state==='denied')return result('denied','MENTOR_FORBIDDEN');

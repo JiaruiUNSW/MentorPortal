@@ -12,7 +12,7 @@ export async function syncMentorAccount(bindings: CacheBindings, principal: Prin
   requireMentor(principal, 'live');
   const config = cacheConfig(bindings), now = options.now ?? Date.now;
   if (!config.enabled) return result('disabled');
-  if (bindings.PORTAL_MODE === 'demo' || !config.allowedUserIds.has(principal.mentorUserId)) return result('not_allowed');
+  if (bindings.PORTAL_MODE === 'demo') return result('not_allowed');
   if (!await activeAccount(bindings, principal)) {
     await denyAccountCache(bindings.DB, principal, now(), now() + config.privateTtlMs, 'MENTOR_FORBIDDEN');
     return result('denied', [], 'MENTOR_FORBIDDEN');
@@ -55,13 +55,13 @@ export interface DueSyncResult { status: 'ok' | 'partial' | 'disabled'; accounts
 export async function runDueSync(bindings: CacheBindings, options: SyncOptions = {}): Promise<DueSyncResult> {
   const config = cacheConfig(bindings);
   if (!config.enabled || bindings.PORTAL_MODE === 'demo') return { status: 'disabled', accountsChecked: 0, results: [] };
-  if (!config.allowedUserIds.size) return { status: 'ok', accountsChecked: 0, results: [] };
   const namespaces = [...new Set(options.namespaces ?? ['private', 'catalog'])] as CacheNamespace[];
   if (!namespaces.length || namespaces.some(value => value !== 'private' && value !== 'catalog')) fail('VALIDATION_ERROR', 'Choose a supported cache namespace.');
   const now = (options.now ?? Date.now)();
   const maximum = duration(options.maxAccounts, 20, 1, 100);
-  const ids = [...config.allowedUserIds];
-  const rows = await bindings.DB.prepare(`SELECT a.id,a.email,a.display_name,a.mentor_user_id FROM auth_accounts a LEFT JOIN mentor_cache_sync_state s ON s.account_id=a.id AND s.mentor_user_id=a.mentor_user_id WHERE a.mode='live' AND a.role='mentor' AND a.status='active' AND a.mentor_user_id IN (${ids.map(() => '?').join(',')}) AND (? OR s.account_id IS NULL OR (? AND (s.next_private_sync_at<=? OR s.next_redemption_sync_at<=?)) OR (? AND s.next_catalog_sync_at<=?)) AND (s.lease_expires_at IS NULL OR s.lease_expires_at<=?) ORDER BY min(coalesce(s.next_private_sync_at,0),coalesce(s.next_catalog_sync_at,0),coalesce(s.next_redemption_sync_at,9007199254740991)),a.id LIMIT ?`).bind(...ids, options.force ? 1 : 0, namespaces.includes('private') ? 1 : 0, now, now, namespaces.includes('catalog') ? 1 : 0, now, now, maximum).all<{ id: string; email: string; display_name: string; mentor_user_id: number }>();
+  const selected=options.mentorUserId;
+  if(selected!==undefined&&(!Number.isSafeInteger(selected)||selected<1||selected>2_147_483_647))fail('VALIDATION_ERROR','Choose a valid existing Mentor User ID.');
+  const rows = await bindings.DB.prepare(`SELECT a.id,a.email,a.display_name,a.mentor_user_id FROM auth_accounts a LEFT JOIN mentor_cache_sync_state s ON s.account_id=a.id AND s.mentor_user_id=a.mentor_user_id WHERE a.mode='live' AND a.role='mentor' AND a.status='active' AND (? IS NULL OR a.mentor_user_id=?) AND (? OR s.account_id IS NULL OR (? AND (s.next_private_sync_at<=? OR s.next_redemption_sync_at<=?)) OR (? AND s.next_catalog_sync_at<=?)) AND (s.lease_expires_at IS NULL OR s.lease_expires_at<=?) ORDER BY min(coalesce(s.next_private_sync_at,0),coalesce(s.next_catalog_sync_at,0),coalesce(s.next_redemption_sync_at,9007199254740991)),a.id LIMIT ?`).bind(selected??null,selected??null, options.force ? 1 : 0, namespaces.includes('private') ? 1 : 0, now, now, namespaces.includes('catalog') ? 1 : 0, now, now, maximum).all<{ id: string; email: string; display_name: string; mentor_user_id: number }>();
   const results: SyncResult[] = [];
   for (const row of rows.results) {
     const principal: Principal = { accountId: row.id, email: row.email, displayName: row.display_name, mentorUserId: row.mentor_user_id, role: 'mentor', mode: 'live' };

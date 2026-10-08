@@ -7,14 +7,12 @@ export type CacheBindings = PortalBindings & {
   MENTOR_CACHE_PRIVATE_TTL_HOURS?: string;
   MENTOR_CACHE_CATALOG_TTL_HOURS?: string;
   MENTOR_CACHE_MAX_STALE_HOURS?: string;
-  MENTOR_SYNC_ALLOWED_USER_IDS?: string;
 };
 export interface CacheConfig {
   enabled: boolean;
   privateTtlMs: number;
   catalogTtlMs: number;
   hardAgeMs: number;
-  allowedUserIds: Set<number>;
 }
 export interface PrivateSnapshot {
   schemaVersion: 1;
@@ -81,6 +79,8 @@ export interface SyncOptions {
   retryDelayMs?: number;
   limits?: Partial<SyncLimits>;
   maxAccounts?: number;
+  /** Optional one-off operator selector, never a persistent eligibility policy. */
+  mentorUserId?: number;
 }
 export interface SyncResult {
   accountId: string;

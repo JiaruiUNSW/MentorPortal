@@ -5,6 +5,10 @@ import { setBindingsProvider } from "../lib/runtime";
 const once = process.argv.includes("--once");
 const force = process.argv.includes("--force");
 if (force && !once) throw new Error("--force requires --once; scheduled runs always respect the refresh intervals.");
+const mentorIndex=process.argv.indexOf('--mentor-id');
+const selector=mentorIndex<0?undefined:process.argv[mentorIndex+1];
+if(mentorIndex>=0&&(!once||!selector||! /^[1-9]\d{0,9}$/.test(selector)||Number(selector)>2_147_483_647||process.argv.lastIndexOf('--mentor-id')!==mentorIndex))throw new Error('--mentor-id requires --once and one valid existing Mentor User ID.');
+const mentorUserId=selector===undefined?undefined:Number(selector);
 const bindings = getStandaloneBindings();
 setBindingsProvider(() => bindings);
 let stopping = false;
@@ -17,7 +21,7 @@ process.on("SIGINT", stop);
 try {
   do {
     try {
-      const result = await runDueSync(bindings, { force });
+      const result = await runDueSync(bindings, { force, mentorUserId });
       console.log(JSON.stringify({ event: "mentor_sync_tick", at: new Date().toISOString(), outcome: result.status,
         accountsChecked: result.accountsChecked, namespaceChecks: result.results.length, synced: result.results.filter(item => item.status === "synced").length,
         errorCodes: [...new Set(result.results.map(item => item.errorCode).filter(Boolean))] }));

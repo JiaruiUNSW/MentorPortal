@@ -49,7 +49,7 @@ before(async()=>{
     export default {async fetch(request,env){
       const input=await request.json(),account=input.account||${JSON.stringify(A)},actor=input.actor||1;
       const principal={accountId:account,mentorUserId:actor,email:'fixture'+actor+'@example.test',displayName:'Synthetic',role:'mentor',mode:'live'};
-      const bindings={...env,PORTAL_MODE:'live',MENTOR_CACHE_ENABLED:'true',MENTOR_SYNC_ALLOWED_USER_IDS:'1,2',MENTOR_READ_URL:'https://synthetic.logic.azure.com/read',MENTOR_BRIDGE_KEY:'synthetic-test-bridge-key-at-least-32-characters',...(input.bindings||{})};
+      const bindings={...env,PORTAL_MODE:'live',MENTOR_CACHE_ENABLED:'true',MENTOR_READ_URL:'https://synthetic.logic.azure.com/read',MENTOR_BRIDGE_KEY:'synthetic-test-bridge-key-at-least-32-characters',...(input.bindings||{})};
       const options={fetcher,now:()=>clock,minimumRequestIntervalMs:0,...(input.options||{})};
       try{
         if(input.action==='reset'){clock=Date.now();controls.clear();calls.length=0;logs.length=0;held=false;releaseHold=undefined;return Response.json({now:clock});}
@@ -90,7 +90,7 @@ test('only financial RPCs refresh pending status, with the daily and catalog sch
   assert.equal((await action('full')).status,'synced');const before=await snapshot(),times=await state(),count=(await stats()).calls.length;
   assert.equal(Number(times.next_private_sync_at)-before.synced_at,24*HOUR);assert.equal(Number(times.next_catalog_sync_at)-before.synced_at,48*HOUR);assert.equal(Number(times.next_redemption_sync_at)-before.synced_at,5*MINUTE);
   await due();await control({status:'processing',creditState:'refunded',balance:70,revision:2,amount:-30});
-  const tick=(await command<DueSyncResult>({action:'due',bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'1'}})).body;assert.equal(tick.status,'ok');assert.ok(tick.results.some(result=>result.refreshKind==='redemption_status'&&result.status==='synced'));
+  const tick=(await command<DueSyncResult>({action:'due',options:{mentorUserId:1}})).body;assert.equal(tick.status,'ok');assert.ok(tick.results.some(result=>result.refreshKind==='redemption_status'&&result.status==='synced'));
   assert.deepEqual((await stats()).calls.slice(count).map(item=>item.operation),['redemptions.list','balance.get','transactions.list']);
   const after=await snapshot(),later=await state();for(const field of ['synced_at','refresh_after','hard_expires_at'] as const)assert.equal(after[field],before[field]);
   assert.equal(later.next_private_sync_at,times.next_private_sync_at);assert.equal(later.next_catalog_sync_at,times.next_catalog_sync_at);assert.equal(Number(later.next_redemption_sync_at),(await stats()).now+5*MINUTE);
@@ -125,9 +125,9 @@ test('inactive accounts never dispatch status reads and lose stale cache access'
 test('full private work takes precedence; stale or missing status snapshots fall back to complete collection',async()=>{
   await action('full');await due();await db.prepare("UPDATE mentor_cache_snapshots SET refresh_after=0 WHERE account_id=? AND namespace='private'").bind(A).run();const before=(await stats()).calls.length;
   assert.equal((await action('target')).needsFullSync,true);assert.equal((await stats()).calls.length,before);
-  const tick=(await command<DueSyncResult>({action:'due',bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'1'}})).body;assert.equal(tick.status,'ok');assert.ok((await stats()).calls.slice(before).some(item=>item.operation==='profile.get'));
+  const tick=(await command<DueSyncResult>({action:'due',options:{mentorUserId:1}})).body;assert.equal(tick.status,'ok');assert.ok((await stats()).calls.slice(before).some(item=>item.operation==='profile.get'));
   await due();await db.prepare("DELETE FROM mentor_cache_snapshots WHERE account_id=? AND namespace='private'").bind(A).run();assert.equal((await action('target')).needsFullSync,true);
-  assert.equal((await command<DueSyncResult>({action:'due',bindings:{MENTOR_SYNC_ALLOWED_USER_IDS:'1'}})).body.status,'ok');assert.ok(await snapshot());
+  assert.equal((await command<DueSyncResult>({action:'due',options:{mentorUserId:1}})).body.status,'ok');assert.ok(await snapshot());
 });
 
 test('an expired older full-sync lease cannot overwrite a newer targeted confirmation',async()=>{

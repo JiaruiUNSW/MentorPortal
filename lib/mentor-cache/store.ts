@@ -12,7 +12,7 @@ export async function requireCacheAccount(bindings: CacheBindings, principal: Pr
   requireMentor(principal, 'live');
   if (bindings.PORTAL_MODE === 'demo') fail('MENTOR_FORBIDDEN', 'Preview accounts cannot read a live snapshot.', 403);
   if (!config.enabled) fail('DRAFT_NOT_CONFIGURED', 'Background data caching is not enabled.', 503);
-  if (!config.allowedUserIds.has(principal.mentorUserId) || !await activeAccount(bindings, principal)) fail('MENTOR_FORBIDDEN', 'This account is not authorized to read synchronized mentor data.', 403);
+  if (!await activeAccount(bindings, principal)) fail('MENTOR_FORBIDDEN', 'This account is not authorized to read synchronized mentor data.', 403);
 }
 export async function stateFor(db: D1Database, principal: Principal): Promise<SyncState | null> {
   return db.prepare('SELECT * FROM mentor_cache_sync_state WHERE account_id=? AND mentor_user_id=?').bind(principal.accountId, principal.mentorUserId).first<SyncState>();
