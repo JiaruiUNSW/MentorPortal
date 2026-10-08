@@ -5,6 +5,7 @@ services:
     build: .
     restart: unless-stopped
     init: true
+    stop_grace_period: 100s
     env_file: ${PORTAL_ENV_FILE:-.env.production}
     environment:
       DATA_DIR: /data
@@ -36,6 +37,29 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 60s
+    env_file: ${PORTAL_ENV_FILE:-.env.production}
+    environment:
+      DATA_DIR: /data
+      MIGRATIONS_DIR: /app/drizzle
+    volumes:
+      - portal-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on:
+      web: { condition: service_healthy }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+  writer:
+    image: mentor-portal:${PORTAL_IMAGE_TAG:-local}
+    command: [node, standalone-dist/write-worker.mjs]
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 100s
     env_file: ${PORTAL_ENV_FILE:-.env.production}
     environment:
       DATA_DIR: /data

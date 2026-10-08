@@ -13,7 +13,9 @@ HERE=Path(__file__).resolve().parent
 STATUS=HERE.parents[1].parent/'outputs/mentor-editing-usso-20261003/backup-status.json'
 status=json.loads(STATUS.read_text())
 if status.get('status')!='verified':raise SystemExit('A verified backup is required')
-context={'backupPath':status['backupPath'],'candidate':{'tag':args.candidate_tag,'id':args.candidate_id,'configDigest':args.candidate_config_id},'rollback':{'tag':args.rollback_tag,'id':args.rollback_id,'configDigest':args.rollback_config_id}}
+expected_migrations=sorted(path.name for path in (HERE.parents[1]/'drizzle').glob('*.sql'))
+if not expected_migrations or any(not re.fullmatch(r'\d{4}_[A-Za-z0-9_]+\.sql',name) for name in expected_migrations):raise SystemExit('Invalid migration inventory')
+context={'backupPath':status['backupPath'],'expectedMigrations':expected_migrations,'candidate':{'tag':args.candidate_tag,'id':args.candidate_id,'configDigest':args.candidate_config_id},'rollback':{'tag':args.rollback_tag,'id':args.rollback_id,'configDigest':args.rollback_config_id}}
 for key in ['candidate','rollback']:
     if not re.fullmatch(r'mentor-portal:[A-Za-z0-9._-]+',context[key]['tag']) or any(not re.fullmatch(r'sha256:[a-f0-9]{64}',context[key][field]) for field in ['id','configDigest']):raise SystemExit('Invalid reviewed image reference')
 program='CONTEXT = '+repr(context)+'\n'+(HERE/'upgrade-check-remote.py').read_text()

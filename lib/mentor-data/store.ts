@@ -2,6 +2,7 @@ import type { BridgeResponse, ClientRequest } from '../contracts';
 import type { Principal } from '../runtime';
 import { createDemoState, type DemoChange, type DemoState } from './demo';
 import { errorEnvelope, fail } from './errors';
+import type { AsyncExecution } from './async-guards';
 
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -17,13 +18,18 @@ export interface RequestRow {
   account_id: string; mode: string; idempotency_key: string; request_id: string; operation: string; payload_hash: string; state: string; lease_token: string; lease_expires_at: number; response_json: string | null; updated_at: number;
 }
 export interface Claim { row: RequestRow; lease: string; replay?: BridgeResponse; resumingUpstreamPending?: boolean }
-export async function claimRequest(db: D1Database, principal: Principal, request: ClientRequest, requestId: string): Promise<Claim> {
+export async function claimRequest(db: D1Database, principal: Principal, request: ClientRequest, requestId: string, execution?: AsyncExecution): Promise<Claim> {
   if (!request.idempotencyKey) fail('VALIDATION_ERROR', 'A change requires an idempotency key.');
   const hash = await sha256(canonicalJson({ operation: request.operation, payload: request.payload }));
   const now = Date.now(), lease = crypto.randomUUID();
-  const result = await db.prepare('INSERT INTO mentor_requests (account_id,mode,idempotency_key,request_id,operation,payload_hash,state,lease_token,lease_expires_at,created_at,updated_at) SELECT ?,?,?,?,?,?,\'pending\',?,?,?,? WHERE (SELECT COUNT(*) FROM mentor_requests WHERE account_id=? AND mode=? AND created_at>?)<30 ON CONFLICT(account_id,mode,idempotency_key) DO NOTHING').bind(principal.accountId, principal.mode, request.idempotencyKey, requestId, request.operation, hash, lease, now + 45000, now, now, principal.accountId, principal.mode, now - 60000).run();
+  const guard=execution?" AND EXISTS (SELECT 1 FROM mentor_async_jobs WHERE id=? AND account_id=? AND mentor_user_id=? AND status='running' AND lease_token=? AND lease_expires_at>?)":principal.mode==='live'?" AND NOT EXISTS (SELECT 1 FROM mentor_async_jobs WHERE account_id=? AND idempotency_key=?)":'';
+  const args=execution?[execution.jobId,principal.accountId,principal.mentorUserId,execution.leaseToken,now]:principal.mode==='live'?[principal.accountId,request.idempotencyKey]:[];
+  const result = await db.prepare(`INSERT INTO mentor_requests (account_id,mode,idempotency_key,request_id,operation,payload_hash,state,lease_token,lease_expires_at,created_at,updated_at) SELECT ?,?,?,?,?,?,'pending',?,?,?,? WHERE (SELECT COUNT(*) FROM mentor_requests WHERE account_id=? AND mode=? AND created_at>?)<30${guard} ON CONFLICT(account_id,mode,idempotency_key) DO NOTHING`).bind(principal.accountId, principal.mode, request.idempotencyKey, requestId, request.operation, hash, lease, now + 45000, now, now, principal.accountId, principal.mode, now - 60000,...args).run();
   const row = await db.prepare('SELECT * FROM mentor_requests WHERE account_id=? AND mode=? AND idempotency_key=?').bind(principal.accountId, principal.mode, request.idempotencyKey).first<RequestRow>();
-  if (!row) fail('RATE_LIMITED', 'Too many changes. Please wait a minute before trying again.', 429, true);
+  if (!row) {
+    if(principal.mode==='live'&&await db.prepare('SELECT id FROM mentor_async_jobs WHERE account_id=? AND idempotency_key=?').bind(principal.accountId,request.idempotencyKey).first())fail('REQUEST_IN_PROGRESS','This intent is owned by a background change. Check its recorded status instead.',409,true);
+    fail('RATE_LIMITED', 'Too many changes. Please wait a minute before trying again.', 429, true);
+  }
   if (row.payload_hash !== hash || row.operation !== request.operation) fail('IDEMPOTENCY_CONFLICT', 'This idempotency key was already used for a different change.', 409, false, row.request_id);
   if (result.meta.changes === 1) return { row, lease };
   if (row.response_json && ['succeeded', 'failed'].includes(row.state)) return { row, lease: row.lease_token, replay: { ...JSON.parse(row.response_json), replayed: true } };

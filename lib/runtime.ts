@@ -7,6 +7,7 @@ export interface PortalBindings {
   MENTOR_BRIDGE_KEY?: string;
   MENTOR_LIVE_WRITES_ENABLED?: string;
   MENTOR_REDEEM_ENABLED?: string;
+  MENTOR_ASYNC_WRITES_ENABLED?: string;
   MENTOR_READ_URL?: string;
   MENTOR_ATTENDANCE_URL?: string;
   MENTOR_REPORT_URL?: string;

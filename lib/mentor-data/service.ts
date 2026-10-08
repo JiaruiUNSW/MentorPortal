@@ -9,9 +9,10 @@ import { applyConfirmedWriteToCache, invalidateMentorCache, readCachedMentor } f
 import { authorizeLiveParent, bytesAsUpload, fileDto, ownFile, ownFiles, projectLiveAttachments, removeObject, stageUpload, validateDemoFile, type FileRow } from './files';
 import { acquireResourceLocks, finishResourceLocks, markResourceDispatch, renewResourceLocks } from './resource-locks';
 import { requireCurrentRewardQuote, RewardQuoteConflict } from '../mentor-cache/reward-quote';
+import { requireAsyncLane, renewAsyncExecution, type AsyncExecution } from './async-guards';
 
 /** Internal dependency injection only; request JSON cannot override timings or transport. */
-export interface LiveExecutionOptions { requestBudgetMs?: number; claimLeaseMs?: number; heartbeatMs?: number; fetcher?: typeof fetch }
+export interface LiveExecutionOptions { requestBudgetMs?: number; claimLeaseMs?: number; heartbeatMs?: number; fetcher?: typeof fetch; asyncExecution?: AsyncExecution }
 function liveContext(bindings:PortalBindings,claim:Claim|undefined,options:LiveExecutionOptions) {
   const bounded=(value:number|undefined,fallback:number,max:number)=>{
     if(value===undefined)return fallback;
@@ -25,7 +26,7 @@ function liveContext(bindings:PortalBindings,claim:Claim|undefined,options:LiveE
   let stopped=false,leaseError:unknown,renewal=Promise.resolve(),resources:string[]=[];
   const state={dispatched:false,localMutation:false};
   const renew=()=>{
-    renewal=renewal.then(async()=>{if(!stopped&&claim){const expires=Math.min(deadlineAt+5000,Date.now()+leaseMs);await renewLiveClaim(bindings.DB,claim,expires);await renewResourceLocks(bindings.DB,claim,resources,expires);}});
+    renewal=renewal.then(async()=>{if(!stopped){if(options.asyncExecution)await renewAsyncExecution(bindings.DB,options.asyncExecution);if(claim){const expires=Math.min(deadlineAt+5000,Date.now()+leaseMs);await renewLiveClaim(bindings.DB,claim,expires);await renewResourceLocks(bindings.DB,claim,resources,expires);}}});
     return renewal;
   };
   const check=async()=>{
@@ -36,8 +37,8 @@ function liveContext(bindings:PortalBindings,claim:Claim|undefined,options:LiveE
   };
   const timer=setTimeout(()=>controller.abort(),budget);
   const heartbeat=claim?setInterval(()=>{void renew().catch(error=>{leaseError=error;controller.abort();});},heartbeatMs):undefined;
-  const context:FlowCallContext={deadlineAt,signal:controller.signal,fetcher:options.fetcher,readMemo:new Map(),beforeDispatch:async(operation)=>{await check();if(claim&&isWrite(operation))await markResourceDispatch(bindings.DB,claim,resources);},onWriteDispatch:()=>{state.dispatched=true;}};
-  return {context,state,check,acquire:async(keys:string[])=>{await check();if(claim)resources=await acquireResourceLocks(bindings.DB,claim,keys,Math.min(deadlineAt+5000,Date.now()+leaseMs));},stop:()=>{stopped=true;clearTimeout(timer);if(heartbeat)clearInterval(heartbeat);controller.abort();}};
+  const context:FlowCallContext={deadlineAt,signal:controller.signal,fetcher:options.fetcher,readMemo:new Map(),beforeDispatch:async(operation)=>{await check();if(claim&&isWrite(operation)){if(options.asyncExecution)await renewAsyncExecution(bindings.DB,options.asyncExecution,true);await markResourceDispatch(bindings.DB,claim,resources);}},onWriteDispatch:()=>{state.dispatched=true;}};
+  return {context,state,check,acquire:async(keys:string[])=>{await check();if(claim)resources=await acquireResourceLocks(bindings.DB,claim,keys,Math.min(deadlineAt+5000,Date.now()+leaseMs),options.asyncExecution);},stop:()=>{stopped=true;clearTimeout(timer);if(heartbeat)clearInterval(heartbeat);controller.abort();}};
 }
 type LiveContext=ReturnType<typeof liveContext>;
 async function finishLocks(bindings:PortalBindings,claim:Claim,outcome:Parameters<typeof finishResourceLocks>[2]) {
@@ -138,7 +139,7 @@ async function writeLive(bindings:PortalBindings,principal:Principal,request:Cli
   if(request.operation==='attachments.upload') {
     const v=request.payload as OperationPayloads['attachments.upload'];
     const {parent,groupId}=await authorizeLiveParent(bindings,principal,{...v,parentId:v.parentId??null},v.expectedVersion,!claim.resumingUpstreamPending,live.context);
-    await live.acquire(v.parentId?[`${v.parentKind}:${v.parentId}`]:[]);
+    await live.acquire(v.parentId?[...(groupId?[`group:${groupId}`]:[]),`${v.parentKind}:${v.parentId}`]:[]);
     if(parent && parent.attachments.length>=5 && !claim.resumingUpstreamPending) fail('ATTACHMENT_REJECTED','A record can contain at most five attachments.');
     await live.check();live.state.localMutation=true;
     const file=await stageUpload(bindings,principal,v,claim.row.request_id,groupId);
@@ -150,8 +151,8 @@ async function writeLive(bindings:PortalBindings,principal:Principal,request:Cli
   } else if(request.operation==='attachments.delete') {
     const v=request.payload as OperationPayloads['attachments.delete'],file=await ownFile(bindings.DB,principal,v.attachmentId);
     if(file.parent_kind!==v.parentKind || file.parent_id!==(v.parentId??null) || (v.groupId && v.groupId!==file.group_id)) fail('OWNERSHIP_DENIED','This attachment belongs to another record.',403);
-    const {parent}=await authorizeLiveParent(bindings,principal,fileDto(file),v.expectedVersion,!claim.resumingUpstreamPending,live.context);
-    await live.acquire(file.parent_id?[`${file.parent_kind}:${file.parent_id}`]:[]);
+    const {parent,groupId}=await authorizeLiveParent(bindings,principal,fileDto(file),v.expectedVersion,!claim.resumingUpstreamPending,live.context);
+    await live.acquire([...(groupId?[`group:${groupId}`]:[]),...(file.parent_id?[`${file.parent_kind}:${file.parent_id}`]:[])]);
     if(file.source_attachment_id) { if(!claim.resumingUpstreamPending && !parent?.attachments.some(a=>a.id===file.source_attachment_id)) fail('RECORD_NOT_FOUND','The attachment is no longer linked.',404); response=await callFlow(bindings,principal,request,claim.row.request_id,{parentKind:file.parent_kind,parentId:file.parent_id,expectedVersion:v.expectedVersion,attachmentId:file.source_attachment_id},undefined,live.context); }
     else response={schemaVersion:'1.0',requestId:claim.row.request_id,ok:true,data:{deleted:true,parentVersion:null}};
     await live.check();live.state.localMutation=true;
@@ -212,6 +213,7 @@ async function reauthorizeLiveReplay(bindings:PortalBindings,principal:Principal
 export async function executeMentor(bindings:PortalBindings,principal:Principal,request:ClientRequest,requestId=crypto.randomUUID(),options:LiveExecutionOptions={}):Promise<BridgeResponse> {
   const mode=bindings.PORTAL_MODE==='demo'?'demo':'live'; requireMentor(principal,mode);
   requireLiveWriteAccess(bindings,request.operation);
+  if(isWrite(request.operation))await requireAsyncLane(bindings,principal,request,options.asyncExecution);
   if(request.operation==='attachments.download') return fileDownload(bindings,principal,request,requestId);
   if(!isWrite(request.operation)) {
     if(mode==='live') {
@@ -221,7 +223,7 @@ export async function executeMentor(bindings:PortalBindings,principal:Principal,
     }
     return {schemaVersion:'1.0',requestId,ok:true,data:readDemo((await loadDemo(bindings.DB,principal)).state,request)} as BridgeResponse;
   }
-  const claim=await claimRequest(bindings.DB,principal,request,requestId);
+  const claim=await claimRequest(bindings.DB,principal,request,requestId,options.asyncExecution);
   if(claim.replay) {
     if(mode==='live') {
       const live=liveContext(bindings,undefined,options);
@@ -244,9 +246,9 @@ export async function executeMentor(bindings:PortalBindings,principal:Principal,
   }
   catch(error) {
     live?.stop();
-    if(mode==='live' && claim.resumingUpstreamPending && !live?.state.dispatched) {
-      // A failed status-check preflight does not prove the previously acknowledged
-      // source write stopped. Retain its ledger state and any dispatched resource locks.
+    if(mode==='live' && claim.resumingUpstreamPending && (!live?.state.dispatched || (error instanceof MentorError && !['PARTIAL_WRITE','UPSTREAM_UNAVAILABLE'].includes(error.code)))) {
+      // Native actor/group guards can also reject before reading the original ledger.
+      // Such a response does not resolve the previously acknowledged source attempt.
       const safe=safeError(error);safe.requestId=claim.row.request_id;
       try {await recordUpstreamPending(bindings.DB,claim);}catch { /* Preserve the existing durable fence on storage failure. */ }
       await finishLocks(bindings,claim,'pending');

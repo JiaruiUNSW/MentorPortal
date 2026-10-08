@@ -54,7 +54,13 @@ def deployment_metadata():
     if release.parent != ROOT/'releases':
         raise RuntimeError('Unexpected current release path')
     result = {'releasePath':str(release),'releaseName':release.name,'volume':VOLUME,'privateEnvWriteFlag':private_env_flag(),'containers':{}}
-    for container in CONTAINERS:
+    # Older releases have only web/sync. Once installed, the durable writer must
+    # obey the same maintenance guard before a consistent object backup.
+    containers=list(CONTAINERS)
+    writer='mentor-portal-writer-1'
+    probe=subprocess.run(['docker','container','inspect',writer],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    if probe.returncode==0:containers.append(writer)
+    for container in containers:
         data = run('docker','inspect','--format','{{.Id}}\n{{.Image}}\n{{.Config.Image}}\n{{.State.StartedAt}}\n{{.State.Running}}',container).splitlines()
         if len(data) != 5 or data[4] != 'true':
             raise RuntimeError('A portal container is not running')
@@ -63,7 +69,7 @@ def deployment_metadata():
             raise RuntimeError('Unexpected data volume')
         result['containers'][container] = {'containerId':data[0],'imageId':data[1],'imageTag':data[2],'startedAt':data[3],'runtime':runtime_flags(container)}
     if len({item['imageId'] for item in result['containers'].values()}) != 1:
-        raise RuntimeError('Web and sync images do not match')
+        raise RuntimeError('Portal service images do not match')
     files = [release/name for name in ['compose.yaml','Dockerfile','package.json','package-lock.json']]
     files += sorted((release/'drizzle').glob('*.sql'))
     result['publicReleaseFiles'] = [{'path':str(path.relative_to(release)),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'bytes':path.stat().st_size} for path in files if path.is_file() and not path.is_symlink()]

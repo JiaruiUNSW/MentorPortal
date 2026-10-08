@@ -16,6 +16,7 @@ import { SupportView } from "./support";
 import { WebMcpBridge } from "./webmcp";
 import { DataSyncStatus } from "./data-sync-status";
 import { createGroupDirectoryLoader, type GroupSelection } from "./group-directory";
+import { AsyncJobsProvider, AsyncJobsSummary } from "./async-jobs";
 export function PortalApp() {
   const { session, loading, error, refresh } = useSession();
   if (loading) return <div className="auth-page"><div className="auth-surface"><Link className="portal-brand" href="/">Mentor Portal</Link><LoadingState /></div></div>;
@@ -33,6 +34,12 @@ function SignedInPortal() {
   const [loadGroups] = useState(() => createGroupDirectoryLoader(payload => mentorRequest("groups.list", payload)));
   const bootstrap = useResource(loadBootstrap);
   const directory = useResource(loadGroups);
+  const reloadBootstrap = bootstrap.reload;
+  const reloadDirectory = directory.reload;
+  const onSaved = useCallback(() => {
+    setRevision(value => value + 1);
+    void Promise.all([reloadBootstrap(), reloadDirectory()]);
+  }, [reloadBootstrap, reloadDirectory]);
 
   useEffect(() => {
     const sync = () => { const id = window.location.hash.slice(1); if (navigation.some(item => item.id === id)) setActive(id as View); };
@@ -56,12 +63,10 @@ function SignedInPortal() {
   else if (active === "profile") page = <ProfileView />;
   else page = <SupportView />;
 
-  return <PortalShell active={active} navigate={navigate}>
+  return <AsyncJobsProvider onSynced={onSaved}><PortalShell active={active} navigate={navigate}>
     <WebMcpBridge active={active} navigate={navigate} />
+    <AsyncJobsSummary />
     {page}
-    <ReportDialog selection={report} close={() => setReport(null)} onSaved={() => {
-      setRevision(value => value + 1);
-      void Promise.all([bootstrap.reload(), directory.reload()]);
-    }} />
-  </PortalShell>;
+    <ReportDialog selection={report} close={() => setReport(null)} onSaved={onSaved} />
+  </PortalShell></AsyncJobsProvider>;
 }

@@ -26,6 +26,7 @@ Edit `.env.production` privately. Never commit it or print resolved secret-beari
 | `TRUST_PROXY` | `false` for the tunnel test |
 | `MENTOR_LIVE_WRITES_ENABLED` | `false` |
 | `MENTOR_REDEEM_ENABLED` | Optional; `false` pauses new reward requests independently, unset/`true` preserves existing behavior |
+| `MENTOR_ASYNC_WRITES_ENABLED` | `false` initially; explicit `true` allows opted-in attendance/report submissions to be durably accepted |
 | `MENTOR_CACHE_ENABLED` | `true`; keep enabled for page reads to stay local |
 | `MENTOR_CACHE_PRIVATE_TTL_HOURS` | `24` |
 | `MENTOR_CACHE_CATALOG_TTL_HOURS` | `48` |
@@ -44,6 +45,10 @@ After the corresponding live paths have been verified, ordinary editing can be e
 The local ID allowlist and upstream authorization must both admit the pilot. The current source Flow does not permit all external mentors. Do not replace that source check with a broad local allowlist.
 
 ## 2. Build
+
+The image also bundles `standalone-dist/write-worker.mjs`. Compose service `writer` shares the existing private environment and `portal-data` volume, polls its durable queue every second, and is independent of the daily cache `sync` worker. Deploy `web`, `sync` and `writer` together before enabling async admission. Browser clients additionally send `Prefer: respond-async`; other clients retain the original synchronous contract. Keep redemption's separate activation setting unchanged.
+
+Web post-response execution and `writer` have a 100-second Docker stop grace, allowing the current bounded attempt to finish. The writer stops taking new work on SIGTERM and closes SQLite after the current attempt settles. A forced termination can leave an uncertain source request; queue lease expiry does not authorize a new business POST. Turning the global write gate off pauses unstarted jobs, while disabling only async admission lets accepted work drain. Before an older release is restored, follow the backup/rollback instructions: stop all writers, verify no unresolved jobs, retain the exact applied migrations, and keep global writes off. Migration 0006 is additive and must not be removed from an image opening an already migrated database.
 
 ```sh
 docker compose --env-file .env.production build web

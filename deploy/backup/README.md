@@ -23,3 +23,15 @@ The local non-secret status record is written outside the public checkout to `ou
 The storage adapter refuses an applied migration that is missing from an image. The original `6ab87d3` image therefore cannot open a database after migrations `0003`/`0004`. A rollback image must retain the old application code **and the exact applied migration files**. Do not restore the pre-upgrade database over production merely to bypass this check; that would discard subsequent data.
 
 `run-upgrade-check.py` accepts reviewed candidate/rollback tags and exact image digests. It copies the verified backup into a new private directory, starts the candidate with that copy to apply migrations, then starts the rollback image on the same migrated copy. Only readiness, integrity, migration names and aggregate account/cache/table counts are checked. Both containers have no external network, no published ports and dummy non-secret settings; the production volume and private environment file are never mounted/read. No user login is attempted. The copy is removed after verification and a private result is retained beside the backup.
+
+The check uses the reviewed checkout's exact migration inventory, including the
+durable write-queue migration. A rollback image must carry that same inventory.
+Before rolling back to application code without queue support, disable live
+writes and asynchronous acceptance, let the current writer finish, and verify
+that no queued, running or unresolved write jobs remain. Keep the database and
+queue records intact. An older application cannot enforce a pending queue's
+group reservations, so do not re-enable its writes while jobs need resolution.
+
+Backups also inspect `mentor-portal-writer-1` when installed. Recreate all Portal
+services with live writes disabled before running the backup; allow their
+configured shutdown grace period so an in-flight HTTPS request can finish.

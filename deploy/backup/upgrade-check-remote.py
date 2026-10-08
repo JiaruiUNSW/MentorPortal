@@ -68,8 +68,7 @@ def check_image(image, image_id, directory, baseline, suffix, uid, gid):
     for table in expected:
         if table!='_portal_migrations' and result['tableCounts'].get(table)!=baseline['sourceSnapshot']['tableCounts'][table]:
             raise RuntimeError('Existing table counts changed during migration/startup')
-    required=['0003_usso_identity.sql','0004_mentor_resource_locks.sql','0005_redemption_status_refresh.sql']
-    if len(result['migrations'])!=6 or any(name not in result['migrations'] for name in required):
+    if result['migrations']!=CONTEXT['expectedMigrations']:
         raise RuntimeError('Expected feature migrations were not applied')
     if result['activeAccounts']!=baseline['validation']['activeAccounts'] or result['pilotCache']!=baseline['validation']['pilotCache']:
         raise RuntimeError('Account or pilot cache counts changed')

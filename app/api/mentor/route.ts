@@ -3,6 +3,8 @@ import { getBindings } from '@/lib/runtime';
 import { executeMentor } from '@/lib/mentor-data/service';
 import { parseClientRequest } from '@/lib/mentor-data/validation';
 import { errorEnvelope, MentorError, safeError, statusForError } from '@/lib/mentor-data/errors';
+import { enqueueMentorWrite, shouldEnqueueAsync } from '@/lib/mentor-data/async-queue';
+import { acceptedResponse, acceptsAsync } from '@/lib/mentor-data/async-http';
 
 export const dynamic = 'force-dynamic';
 const MAX_REQUEST_BYTES = 7 * 1024 * 1024 + 16384;
@@ -22,7 +24,11 @@ export async function POST(request: Request): Promise<Response> {
     const principal = await requireSession(request);
     await requireMutationProtection(request);
     const body = parseClientRequest(await readRequest(request));
-    const response = await executeMentor(getBindings(), principal, body, requestId);
+    const bindings = getBindings();
+    const response = acceptsAsync(request) && shouldEnqueueAsync(bindings, body)
+      ? await enqueueMentorWrite(bindings, principal, body, requestId)
+      : await executeMentor(bindings, principal, body, requestId);
+    if (response.ok && 'accepted' in response && response.accepted) return acceptedResponse(bindings, response);
     return Response.json(response, { status: response.ok ? body.operation === 'redemptions.create' ? 202 : 200 : statusForError(response.error.code), headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
   } catch (error) {
     if (error instanceof AuthError) return authErrorResponse(error);

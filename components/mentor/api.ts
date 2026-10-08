@@ -5,16 +5,16 @@ let csrfToken = "";
 export class PortalError extends Error {
   constructor(message: string, public code = "REQUEST_FAILED", public requestId?: string) { super(message); this.name = "PortalError"; }
 }
-export async function requestJson<T>(path: string, body?: unknown, retry = true): Promise<T> {
+export async function requestJson<T>(path: string, body?: unknown, retry = true, options: { preferAsync?: boolean } = {}): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, { method: body === undefined ? "GET" : "POST", credentials: "same-origin", cache: "no-store",
-      headers: body === undefined ? undefined : { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+      headers: body === undefined ? undefined : { "Content-Type": "application/json", "X-CSRF-Token": csrfToken, ...(options.preferAsync ? { Prefer: "respond-async" } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body) });
   } catch { throw new PortalError(path === "/api/mentor" ? "We couldn’t confirm the response. Your inputs are preserved; retrying unchanged will safely check the same request." : "We couldn’t confirm the response. Check your connection and the current account status before trying again.", "RESPONSE_UNCONFIRMED"); }
   const result = await response.json().catch(() => null) as { csrfToken?: string; error?: { code?: string; message?: string }; requestId?: string } | null;
   if (result?.csrfToken) csrfToken = result.csrfToken;
-  if (response.status === 403 && result?.error?.code === "CSRF_INVALID" && retry) { await readSession(); return requestJson<T>(path, body, false); }
+  if (response.status === 403 && result?.error?.code === "CSRF_INVALID" && retry) { await readSession(); return requestJson<T>(path, body, false, options); }
   if (!response.ok && !(path === "/api/auth/session" && response.status === 401)) {
     throw new PortalError(result?.error?.message || "This request couldn’t be completed. Please try again.", result?.error?.code, result?.requestId);
   }

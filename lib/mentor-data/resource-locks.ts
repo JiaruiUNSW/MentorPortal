@@ -1,10 +1,12 @@
 import { fail } from './errors';
 import type { Claim } from './store';
+import { asyncResourceGuard, type AsyncExecution } from './async-guards';
 
-export async function acquireResourceLocks(db:D1Database,claim:Claim,keys:string[],expiresAt:number):Promise<string[]> {
+export async function acquireResourceLocks(db:D1Database,claim:Claim,keys:string[],expiresAt:number,execution?:AsyncExecution):Promise<string[]> {
   const sorted=[...new Set(keys)].sort(),now=Date.now(),r=claim.row;
   for(const key of sorted) {
-    const result=await db.prepare("INSERT INTO mentor_resource_locks (resource_key,request_id,owner_account_id,lease_token,lease_expires_at,state,updated_at) VALUES (?,?,?,?,?,'pending',?) ON CONFLICT(resource_key) DO UPDATE SET request_id=excluded.request_id,owner_account_id=excluded.owner_account_id,lease_token=excluded.lease_token,lease_expires_at=excluded.lease_expires_at,state='pending',updated_at=excluded.updated_at WHERE (mentor_resource_locks.state='pending' AND mentor_resource_locks.lease_expires_at<=?) OR (mentor_resource_locks.request_id=? AND mentor_resource_locks.owner_account_id=? AND mentor_resource_locks.state='dispatched' AND ?)").bind(key,r.request_id,r.account_id,claim.lease,expiresAt,now,now,r.request_id,r.account_id,claim.resumingUpstreamPending?1:0).run();
+    const queue=asyncResourceGuard(execution);
+    const result=await db.prepare(`INSERT INTO mentor_resource_locks (resource_key,request_id,owner_account_id,lease_token,lease_expires_at,state,updated_at) SELECT ?,?,?,?,?,'pending',? WHERE ${queue.sql} ON CONFLICT(resource_key) DO UPDATE SET request_id=excluded.request_id,owner_account_id=excluded.owner_account_id,lease_token=excluded.lease_token,lease_expires_at=excluded.lease_expires_at,state='pending',updated_at=excluded.updated_at WHERE ((mentor_resource_locks.state='pending' AND mentor_resource_locks.lease_expires_at<=?) OR (mentor_resource_locks.request_id=? AND mentor_resource_locks.owner_account_id=? AND mentor_resource_locks.state='dispatched' AND ?)) AND ${queue.sql}`).bind(key,r.request_id,r.account_id,claim.lease,expiresAt,now,key,...queue.args,now,r.request_id,r.account_id,claim.resumingUpstreamPending?1:0,key,...queue.args).run();
     if(result.meta.changes!==1) {
       // Acquisition never waits while holding a subset of resources, so lock cycles cannot deadlock.
       if(claim.resumingUpstreamPending)await db.prepare("UPDATE mentor_resource_locks SET state='uncertain' WHERE request_id=? AND owner_account_id=? AND lease_token=? AND state='pending'").bind(r.request_id,r.account_id,claim.lease).run();
