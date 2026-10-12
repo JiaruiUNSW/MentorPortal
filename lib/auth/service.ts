@@ -27,6 +27,7 @@ interface InviteRow {
   email: string;
   display_name: string;
   mentor_user_id: number;
+  role: Principal["role"];
   mode: Mode;
   created_at: number;
   expires_at: number;
@@ -323,14 +324,14 @@ export class AuthService {
     const tokenHash = await hashToken(token);
     const now = this.clock();
     const invite = await this.db.prepare(`SELECT * FROM auth_invites WHERE token_hash = ? AND mode = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`).bind(tokenHash, this.mode, now).first<InviteRow>();
-    if (!invite) throw INVALID_INVITE();
+    if (!invite || (invite.role !== "admin" && invite.role !== "mentor") || (invite.role === "admin" ? invite.mentor_user_id !== 0 : invite.mentor_user_id <= 0)) throw INVALID_INVITE();
     const accountId = crypto.randomUUID();
     const passwordHash = await hashPassword(password);
     const activatedAt = this.clock();
     let results: D1Result[];
     try {
       results = await this.db.batch([
-        this.db.prepare(`INSERT INTO auth_accounts (id,email,display_name,password_hash,mentor_user_id,role,mode,status,created_at,disabled_at) SELECT ?,email,display_name,?,mentor_user_id,'mentor',mode,'active',?,NULL FROM auth_invites WHERE id = ? AND token_hash = ? AND mode = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`).bind(accountId, passwordHash, activatedAt, invite.id, tokenHash, this.mode, activatedAt),
+        this.db.prepare(`INSERT INTO auth_accounts (id,email,display_name,password_hash,mentor_user_id,role,mode,status,created_at,disabled_at) SELECT ?,email,display_name,?,mentor_user_id,role,mode,'active',?,NULL FROM auth_invites WHERE id = ? AND token_hash = ? AND mode = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`).bind(accountId, passwordHash, activatedAt, invite.id, tokenHash, this.mode, activatedAt),
         this.db.prepare(`UPDATE auth_invites SET accepted_at = ?, activated_account_id = ? WHERE id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ? AND EXISTS (SELECT 1 FROM auth_accounts WHERE id = ?)`).bind(activatedAt, accountId, invite.id, activatedAt, accountId),
       ]);
     } catch (error) {
@@ -338,7 +339,7 @@ export class AuthService {
       throw error;
     }
     if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) throw INVALID_INVITE();
-    return this.finishLogin(request, { accountId, email: invite.email, displayName: invite.display_name, mentorUserId: invite.mentor_user_id, role: "mentor", mode: this.mode }, 201);
+    return this.finishLogin(request, { accountId, email: invite.email, displayName: invite.display_name, mentorUserId: invite.mentor_user_id, role: invite.role, mode: this.mode }, 201);
   }
 
   async accounts(request: Request): Promise<Response> {
@@ -349,7 +350,7 @@ export class AuthService {
 
   async invites(request: Request): Promise<Response> {
     await this.requireAdmin(request);
-    const result = await this.db.prepare(`SELECT id AS inviteId,email,display_name AS displayName,mentor_user_id AS mentorUserId,mode,created_at AS createdAt,expires_at AS expiresAt,accepted_at AS acceptedAt,revoked_at AS revokedAt FROM auth_invites WHERE mode = ? ORDER BY created_at DESC LIMIT 100`).bind(this.mode).all();
+    const result = await this.db.prepare(`SELECT id AS inviteId,email,display_name AS displayName,mentor_user_id AS mentorUserId,role,mode,created_at AS createdAt,expires_at AS expiresAt,accepted_at AS acceptedAt,revoked_at AS revokedAt FROM auth_invites WHERE mode = ? ORDER BY created_at DESC LIMIT 100`).bind(this.mode).all();
     return this.json({ items: result.results, nextCursor: null });
   }
 
@@ -357,13 +358,16 @@ export class AuthService {
     const admin = await this.requireAdmin(request);
     await this.requireMutationProtection(request);
     await this.rateLimit(request, "invite", 30, 3600);
-    const body = await readAuthJson(request, ["email", "displayName", "mentorUserId", "expiresInHours"]);
+    const body = await readAuthJson(request, ["email", "displayName", "mentorUserId", "expiresInHours", "role"]);
     const email = emailInput(body.email);
     const displayName = nameInput(body.displayName);
-    const mentorUserId = mentorIdInput(body.mentorUserId);
+    const role = body.role ?? "mentor";
+    if (role !== "mentor" && role !== "admin") return invalid("Choose a valid account role.");
+    if (role === "admin" && body.mentorUserId !== undefined && body.mentorUserId !== 0) return invalid("Administrator invitations cannot be linked to a Mentor record.");
+    const mentorUserId = role === "admin" ? 0 : mentorIdInput(body.mentorUserId);
     const hours = body.expiresInHours ?? 72;
     if (typeof hours !== "number" || !Number.isInteger(hours) || hours < 1 || hours > 168) return invalid("Invitation lifetime must be 1–168 hours.");
-    const existing = await this.db.prepare(`SELECT id FROM auth_accounts WHERE mode = ? AND (email = ? OR (mode = 'live' AND mentor_user_id = ?)) LIMIT 1`).bind(this.mode, email, mentorUserId).first();
+    const existing = await this.db.prepare(`SELECT id FROM auth_accounts WHERE mode = ? AND (email = ? OR (? = 'mentor' AND mode = 'live' AND role = 'mentor' AND mentor_user_id = ?)) LIMIT 1`).bind(this.mode, email, role, mentorUserId).first();
     if (existing) throw new AuthError(409, "ACCOUNT_EXISTS", "An account already uses this email or Mentor record.");
     const inviteId = crypto.randomUUID();
     const token = randomToken();
@@ -371,9 +375,9 @@ export class AuthService {
     const expiresAt = now + hours * 3600 * 1000;
     await this.db.batch([
       this.db.prepare(`UPDATE auth_invites SET revoked_at = ? WHERE mode = ? AND email = ? AND accepted_at IS NULL AND revoked_at IS NULL`).bind(now, this.mode, email),
-      this.db.prepare(`INSERT INTO auth_invites (id,token_hash,email,display_name,mentor_user_id,mode,created_by_account_id,created_at,expires_at,accepted_at,revoked_at,activated_account_id) VALUES (?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)`).bind(inviteId, await hashToken(token), email, displayName, mentorUserId, this.mode, admin.accountId, now, expiresAt),
+      this.db.prepare(`INSERT INTO auth_invites (id,token_hash,email,display_name,mentor_user_id,role,mode,created_by_account_id,created_at,expires_at,accepted_at,revoked_at,activated_account_id) VALUES (?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)`).bind(inviteId, await hashToken(token), email, displayName, mentorUserId, role, this.mode, admin.accountId, now, expiresAt),
     ]);
-    return this.json({ invite: { inviteId, email, displayName, mentorUserId, mode: this.mode, expiresAt }, activationUrl: `${applicationOrigin(request, this.appOrigin)}/activate#token=${token}` }, 201);
+    return this.json({ invite: { inviteId, email, displayName, mentorUserId, role, mode: this.mode, expiresAt }, activationUrl: `${applicationOrigin(request, this.appOrigin)}/activate#token=${token}` }, 201);
   }
 
   async revokeInvite(request: Request): Promise<Response> {

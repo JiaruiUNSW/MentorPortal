@@ -82,6 +82,10 @@ This preserves hashes and uses the shared destination volume. The temporary file
 
 For a genuinely new installation instead, provide a random private `SETUP_TOKEN` of at least 32 characters, start the web service, and use `/setup`. Remove that token and recreate `web` after successful setup. Use `/manage` for invitations. Activation links are shared manually; no email is sent by these commands.
 
+Additional administrators use the same single-use invitation lifecycle. An authenticated administrator may send `role: "admin"` to `POST /api/admin/invites`, omitting `mentorUserId` (or setting it to `0`). The existing Mentor invitation form continues to create Mentor accounts. Role and identity are stored in the invitation and cannot be chosen at activation; administrator activation opens `/manage` with a 12-hour session. Invitations default to 72 hours and can be revoked through the existing invitation controls. No email is sent automatically.
+
+Migration `0007_admin_invitations.sql` preserves all existing invitations as Mentor invitations while adding administrator role support. A rollback image opening this database must include the exact migration file; earlier activation code does not support administrator invitations, so do not roll back with outstanding administrator links without addressing those links first.
+
 ## 3. Start and test through the tunnel
 
 ```sh

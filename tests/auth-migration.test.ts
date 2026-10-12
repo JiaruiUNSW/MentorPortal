@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, pbkdf2Sync, randomBytes, randomUUID } from "node:crypto";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -112,6 +112,33 @@ test("private CLI import preserves two standard hashes, supports login and repea
     assert.equal(user.mentorUserId, 74);
     assert.equal(user.role, "mentor");
   } finally { bindings.close(); }
+});
+
+test("admin-invitation migration preserves existing Mentor invitations and their identity bindings", async () => {
+  const legacyMigrations = await mkdtemp(join(directory, "legacy-migrations-"));
+  for (const name of (await readdir(migrationsDir)).filter(name => name.endsWith(".sql") && name < "0007_")) {
+    await copyFile(join(migrationsDir, name), join(legacyMigrations, name));
+  }
+  const dataDir = join(directory, "upgrade-data");
+  const legacy = implementation.createStandaloneBindings({ dataDir, migrationsDir: legacyMigrations, env: {} });
+  let previous: RecordRow;
+  try {
+    for (const [table, rows] of Object.entries(fixture.tables)) {
+      for (const row of rows) {
+        const columns = Object.keys(row);
+        await legacy.DB.prepare(`INSERT INTO ${table} (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`).bind(...Object.values(row)).run();
+      }
+    }
+    previous = (await legacy.DB.prepare("SELECT * FROM auth_invites").first<RecordRow>())!;
+  } finally { legacy.close(); }
+  const upgraded = implementation.createStandaloneBindings({ dataDir, migrationsDir, env: {} });
+  try {
+    const row = (await upgraded.DB.prepare("SELECT * FROM auth_invites").first<RecordRow>())!;
+    assert.deepEqual(row, { ...previous, role: "mentor" });
+    assert.deepEqual((await upgraded.DB.prepare("PRAGMA foreign_key_check").all()).results, []);
+    await assert.rejects(upgraded.DB.prepare("UPDATE auth_invites SET role = 'admin'").run(), /CHECK constraint failed/);
+    assert.equal((await upgraded.DB.prepare("SELECT count(*) AS count FROM auth_accounts").first<{count:number}>())!.count, 2);
+  } finally { upgraded.close(); }
 });
 
 test("a conflicting destination identity rolls back earlier account inserts and preserves the destination", async () => {

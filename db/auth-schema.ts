@@ -38,6 +38,7 @@ export const authInvites = sqliteTable("auth_invites", {
   email: text("email").notNull(),
   displayName: text("display_name").notNull(),
   mentorUserId: integer("mentor_user_id").notNull(),
+  role: text("role", { enum: ["mentor", "admin"] }).notNull().default("mentor"),
   mode: text("mode", { enum: ["demo", "live"] }).notNull(),
   createdByAccountId: text("created_by_account_id").notNull().references(() => authAccounts.id),
   createdAt: integer("created_at").notNull(),
@@ -49,7 +50,8 @@ export const authInvites = sqliteTable("auth_invites", {
   index("auth_invites_email_mode").on(table.email, table.mode),
   index("auth_invites_expiry").on(table.expiresAt),
   check("auth_invites_mode", sql`${table.mode} IN ('demo', 'live')`),
-  check("auth_invites_mapping", sql`${table.mentorUserId} > 0`),
+  check("auth_invites_role", sql`${table.role} IN ('mentor', 'admin')`),
+  check("auth_invites_mapping", sql`(${table.role} = 'admin' AND ${table.mentorUserId} = 0) OR (${table.role} = 'mentor' AND ${table.mentorUserId} > 0)`),
 ]);
 
 export const authSetup = sqliteTable("auth_setup", {

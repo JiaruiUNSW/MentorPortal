@@ -73,7 +73,7 @@ interface AuthBody {
   csrfToken?: string;
   readOnly?: boolean;
   error?: { code: string; message: string };
-  invite?: { inviteId: string; expiresAt: number };
+  invite?: { inviteId: string; expiresAt: number; role: string; mentorUserId: number };
   activationUrl?: string;
   items?: Array<Record<string, unknown>>;
   hash?: string;
@@ -249,6 +249,68 @@ test("concurrent invitation redemption has one winner and one persistent account
   const results = await Promise.all([one.request("/api/auth/activate", { token: invitation.token, password: PASSWORD }), two.request("/api/auth/activate", { token: invitation.token, password: PASSWORD })]);
   assert.deepEqual(results.map((result) => result.response.status).sort(), [201, 410]);
   assert.equal((await database.prepare("SELECT count(*) AS count FROM auth_accounts WHERE role = 'mentor'").first<{count:number}>())!.count, 1);
+});
+
+test("an administrator invitation activates once with its stored role and a 12-hour administrator session", async () => {
+  const admin = await makeAdmin();
+  const created = await admin.request("/api/admin/invites", { email: "second-admin@example.test", displayName: "Second Administrator", role: "admin" });
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.invite?.role, "admin");
+  assert.equal(created.body.invite?.mentorUserId, 0);
+  const url = new URL(created.body.activationUrl!);
+  assert.equal(url.search, "");
+  const token = new URLSearchParams(url.hash.slice(1)).get("token");
+  assert.ok(token);
+  const listing = await admin.request("/api/admin/invites");
+  assert.equal(listing.body.items?.[0].role, "admin");
+  const one = new Client("live"), two = new Client("live");
+  await Promise.all([one.seed(), two.seed()]);
+  assert.equal((await one.request("/api/auth/activate", { token, password: PASSWORD, role: "mentor" })).response.status, 400);
+  const results = await Promise.all([one.request("/api/auth/activate", { token, password: PASSWORD }), two.request("/api/auth/activate", { token, password: PASSWORD })]);
+  assert.deepEqual(results.map(result => result.response.status).sort(), [201, 410]);
+  const activated = results.find(result => result.response.status === 201)!;
+  assert.equal(activated.body.user?.role, "admin");
+  assert.equal(activated.body.user?.mentorUserId, 0);
+  assert.equal(activated.body.user?.email, "second-admin@example.test");
+  assert.match(activated.response.headers.getSetCookie().join(";"), /Max-Age=43200/);
+  const winner = results[0].response.status === 201 ? one : two;
+  assert.equal((await winner.request("/api/admin/accounts")).response.status, 200);
+  const stored = await database.prepare("SELECT role,token_hash,accepted_at FROM auth_invites WHERE id = ?").bind(created.body.invite!.inviteId).first<{role:string;token_hash:string;accepted_at:number|null}>();
+  assert.equal(stored!.role, "admin");
+  assert.notEqual(stored!.token_hash, token);
+  assert.notEqual(stored!.accepted_at, null);
+  assert.equal((await database.prepare("SELECT count(*) AS count FROM auth_accounts WHERE role = 'admin'").first<{count:number}>())!.count, 2);
+  assert.equal((await admin.request("/api/admin/invites", { email: "second-admin@example.test", displayName: "Duplicate", role: "admin" })).response.status, 409);
+});
+
+test("only administrators can issue admin invitations, and role/mapping combinations are enforced", async () => {
+  const anonymous = new Client("live");
+  await anonymous.seed();
+  const body = { email: "another-admin@example.test", displayName: "Another Admin", role: "admin" };
+  assert.equal((await anonymous.request("/api/admin/invites", body)).response.status, 401);
+  const admin = await makeAdmin();
+  const mentorInvite = await invite(admin);
+  await anonymous.request("/api/auth/activate", { token: mentorInvite.token, password: PASSWORD });
+  assert.equal((await anonymous.request("/api/admin/invites", body)).response.status, 403);
+  for (const extra of [{ role: "owner" }, { role: "admin", mentorUserId: 43 }, { role: "mentor", mentorUserId: 0 }]) {
+    assert.equal((await admin.request("/api/admin/invites", { ...body, ...extra })).response.status, 400);
+  }
+  assert.equal((await database.prepare("SELECT count(*) AS count FROM auth_invites WHERE role = 'admin'").first<{count:number}>())!.count, 0);
+});
+
+test("revoked, expired, and wrong-mode admin invitation links cannot grant administrator access", async () => {
+  const admin = await makeAdmin();
+  const client = new Client("live"), demo = new Client("demo");
+  await Promise.all([client.seed(), demo.seed()]);
+  for (const state of ["revoked", "expired", "wrong-mode"] as const) {
+    const created = await admin.request("/api/admin/invites", { email: `${state}@example.test`, displayName: state, role: "admin" });
+    assert.equal(created.response.status, 201);
+    const token = new URLSearchParams(new URL(created.body.activationUrl!).hash.slice(1)).get("token");
+    if (state === "revoked") assert.equal((await admin.request("/api/admin/invites/revoke", { inviteId: created.body.invite!.inviteId })).response.status, 200);
+    if (state === "expired") await database.prepare("UPDATE auth_invites SET expires_at = ? WHERE id = ?").bind(Date.now() - 1, created.body.invite!.inviteId).run();
+    assert.equal((await (state === "wrong-mode" ? demo : client).request("/api/auth/activate", { token, password: PASSWORD })).response.status, 410);
+  }
+  assert.equal((await database.prepare("SELECT count(*) AS count FROM auth_accounts WHERE role = 'admin'").first<{count:number}>())!.count, 1);
 });
 
 test("expired, revoked, reissued and wrong-mode invitations cannot activate", async () => {
